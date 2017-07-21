@@ -5,7 +5,7 @@ date: "`r Sys.Date()`"
 output:
   rmdformats::readthedown
 ---
-```{r echo=FALSE, warning=FALSE}
+```{r echo=FALSE, warning=FALSE, comment=FALSE, results=FALSE}
 #setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 library(data.table)
 library(ggplot2)
@@ -18,32 +18,53 @@ library(randomForest)
 library(caret)
 ```
 
-```{r}
+```{r echo=FALSE, warning=FALSE, comment=FALSE,results=FALSE}
 dat<-matrix(NA,3,2)
 dat[1,]<-c(1,1)
 dat[2,]<-c(2,2)
 dat[3,1]<-3
-dat
+# dat
 lm<-lm(dat[,1]~dat[,2])
-lm$coef
-lm$model
+# lm$coef
+# lm$model
 
 dat[3,2]<-10
 lm<-lm(dat[,1]~dat[,2])
-lm$coef
-lm$model
+# lm$coef
+# lm$model
 ```
 #Initial Step
 ```{r echo=FALSE, warning=FALSE} 
-dt = data.table(read.csv(Sys.glob('output/*.csv'),header = TRUE, sep = ','))
-#Changing datatypes
+dt <- data.table(read.csv(Sys.glob('output/*.csv'),header = TRUE, sep = ','))
+dt<-dt[,-(which(colnames(dt)=="num_healthy1"):which(colnames(dt)=="net_score"))]
+dt<-dt[,-(which(colnames(dt)=="num_unique_users"):which(colnames(dt)=="net_healthy_unhealthy_related_tweets"))]
+
 for (i in colnames(dt)) {
   if (any(i==c("GEOID10","tract","CountyCode","CountyName","countyname","highbroadbandadoptionrate"))){
     dt[,i] <- as.factor(as.character(dt[[i]]))
-  }else{
+  } else if(length(grep("[.]",i))>0 || length(grep("Mortality",i))>0 || length(grep("Sentiment",i))>0 || length(grep("total_twts",i))>0||length(grep("recrecen",i))>0||length(grep("Grocery_Store_AvgDistance",i))>0 || length(grep("Voter_Turnout",i))>0||length(grep("Parkland",i))>0) {
+    #deleting variables that has .1 or .2 at the end.  (duplicated ones)
+     dt[[i]]<-NULL 
+  }
+  else{
     dt[,i] <- as.numeric(as.character(dt[[i]]))
   }
 }
+
+#dropping variables that are >=400
+maxNum <- ncol(dt)
+for (j in maxNum:1){
+  if (length(which(is.na(dt[[j]])==TRUE))>=1){
+    if (length(which(is.na(dt[[j]])==TRUE))>=400){
+      #print (paste(colnames(dt)[j],length(which(is.na(dt[[j]])==TRUE)),sep=" : "))
+      dt[[j]] <- NULL
+    }
+  }
+}
+#IV's end after "GEOID"
+IVnumbers<-which(colnames(dt)=="GEOID10")-1
+#colnames(dt) this is after dropping columns more than 400 na's
+
 ```
 #Exploratory
 ##Our normalization methods
@@ -60,7 +81,7 @@ Normalization B - Food/Alcohol related tweets
   Num alcohol words /   Alcohol related tweets
   
 Tract-level 
-  tweet-level  -->  tract-level  -->  normalization
+  tweet-level  -->  tract-level  -->  normalization 
 
 User-level
   tweet-level  -->  user-level   -->  normalization  --> user-count average of tract-level
@@ -104,643 +125,757 @@ grid.arrange(ggp1, ggp, ncol=2,top="num_alcohol_words")
 ```
 
 #Back to data analysis
-##handling Missing values
+##First step
 ```
-Removed LOG10 & Z 
+Our data set contains 1593 census tracts. (1593 rows)
 
-For eaxmple, 
-Kept      :  "foodneg_10_14"       & "PCT_21_to_29"  
-Removed   :  "LOG10_foodneg_10_14" & "ZPCT_21_to_29"
+80% of census tracts with most tweets. 
 
+Now 
 ```
 ```{r echo=FALSE, warning=FALSE}
-#--1-- just comment this chuck out. 
-
-#--2--removing LOG10, Z
-#--3--removing original variables and leaving LOG10 ,Z 
-for (i in colnames(dt)){
-  if(length(grep(x=i, pattern="LOG10[.]*"))==1){
-    #--2--removing all transformations
-    dt[[i]]<-NULL
-    
-    # #--3--removing originals that have been trasformations 
-    # pp<-paste("LOG10_[.]*")
-    # match_p<-gregexpr(pattern=pp,text=i)
-    # zz<-regmatches(x=i, m=match_p)
-    # zz_vec<-do.call(c,zz)
-    # edit<-strsplit(i, split=zz_vec)
-    # edit<-do.call(c,edit)[2]
-    # dt[[edit]]<-NULL
-  }
-  else if(length(grep(x=i, pattern="Z[.]*"))==1){
-    #--2--removing all transformations
-    dt[[i]]<-NULL
-    
-    # #--3--removing all that has been trasformations 
-    # pp<-paste("Z[.]*")
-    # match_p<-gregexpr(pattern=pp,text=i)
-    # zz<-regmatches(x=i, m=match_p)
-    # zz_vec<-do.call(c,zz)
-    # edit<-strsplit(i, split=zz_vec)
-    # edit<-do.call(c,edit)[2]
-    # dt[[edit]]<-NULL
-  }
-}
-```
-```
-1.
-Tried to remove any row with NA's
-
---> Losing too many data
-
-2.
-Searched any column that has more than 100 NA's
-
-3.
-Removed those variables above first
-and then removed any row that has NA's.
+print (paste0("1593 BY 26 --> ",paste(nrow(dt),ncol(dt),sep=" BY ")))
 ```
 
-```{r echo=FALSE, warning=FALSE}
-maxNum <- ncol(dt)
-for (j in maxNum:1){
-  if (length(which(is.na(dt[[j]])==TRUE))>=1){
-    if (length(which(is.na(dt[[j]])==TRUE))>=100){
-      #print (paste(colnames(dt)[j],length(which(is.na(dt[[j]])==TRUE)),sep=" : "))
-      dt[[j]] <- NULL
-    }
-  }
-}
-dt <- na.omit(dt)
-# #Checking if both data's county names are identical.
-# dd<-factor(dt$CountyName,levels=levels(dt$CountyName))
-# kk<-factor(dt$countyname,levels=levels(dt$CountyName))
-# which(dd!=kk)
-```
-
-##The table demension is 
-```{r echo=FALSE, warning=FALSE}
-print (paste0("1593 BY 215 --> ",paste(nrow(dt),ncol(dt),sep=" BY ")))
-```
-
+##Independent variables (IV)
 ```{r echo=FALSE, warning=FALSE}
 #data prepartion for analyses
-xtrain <- dt[,3:ncol(dt)]
-normA_tract_score <- xtrain[["NormA_tract_net_score"]];xtrain[["NormA_tract_net_score"]]<-NULL
-normA_user_score <- xtrain[["NormA_user_net_score"]];xtrain[["NormA_user_net_score"]]<-NULL
-normB_tract_score <- xtrain[["NormB_tract_net_score"]];xtrain[["NormB_tract_net_score"]]<-NULL
-normB_user_score <- xtrain[["NormB_user_net_score"]];xtrain[["NormB_user_net_score"]]<-NULL
-normB_tract_alc <- xtrain[["NormB_tract_num_alcohol_words"]];xtrain[["NormB_tract_num_alcohol_words"]]<-NULL
-normB_user_alc <- xtrain[["NormB_user_num_alcohol_words"]];xtrain[["NormB_user_num_alcohol_words"]]<-NULL
+LOG10_twts_14_16<-log10(dt$num_tweets)
+xtable<-cbind(dt[,1:IVnumbers],LOG10_twts_14_16)
+
+#--For Food
+#removing "LOG10_PCT_21_to_29_09_13", "LOG10_Liquor_Density_2015","LOG10_Religious_Density_2015"
+xtable_food<-xtable
+xtable_food$LOG10_PCT_21_to_29_09_13<-NULL
+xtable_food$LOG10_Liquor_Density_2015<-NULL
+xtable_food$LOG10_Religious_Density_2015<-NULL
+
+#--For alcohol
+#removing "LOG10_PCT_18_to_29_09_13","LOG10_fast_food_Density_2015"
+xtable_alc<-xtable
+xtable_alc$LOG10_PCT_18_to_29_09_13<-NULL
+xtable_alc$LOG10_fast_food_Density_2015<-NULL
+```
+###IV's for Food 
+```{r echo=FALSE}
+print(xtable_food)
+```
+###IV's for alcohol
+```{r echo=FALSE}
+print(xtable_alc)
 ```
 
-#Regression against Net_score
-```
-Normalization - A - Tract level - Net Score 
-```
-
-```{r echo=FALSE, warning=FALSE}
-data_net_score <- cbind(normA_tract_score,xtrain)
-```
-
-##Principal components regression (PCR) & Ridge regression & Lasso regression  
-
-###Creating a "true" test set
-```
-                80%           20%
-Dependent     score80       score_true      <-how I called
-Data          data80        data_true       <-how I called
-```
-```{r echo=FALSE, warning=FALSE}
-set.seed(1)
-K <- 5
-n <- nrow(data_net_score)
-fold_assignments <- rep(1:K,length=n)
-fold_assignments <- sample(fold_assignments)
-myRandomNumber <- 5
-inds <- which(fold_assignments==myRandomNumber)
-score_true <- normA_tract_score[inds]
-data_true <- data_net_score[inds]
-score80 <- normA_tract_score[-inds]
-data80 <- data_net_score[-inds]
-```
-
-##1. Three models on 80% of the data 
-
-###PCR
-```
-5 - folds Cross Validation to choose the best number of principal components
-```
-```{r warning=FALSE}
-set.seed(1)
-K <- 5
-n <- nrow(data80)
-fold_assignments <- rep(1:K,length=n)
-fold_assignments <- sample(fold_assignments)
-
-err_cv <- matrix(0,nrow=5,ncol=5)
-
-# #--1--No removing 
-# ncomp_vec<-c(3,7,10,15,20)
-#--2--removing log, Z, variables
-ncomp_vec<-c(3,7,20,25,40)
-# #--3--removing original variables
-# ncomp_vec<-c(3,7,20,25,40)
-
-
-colnames(err_cv) <- paste(ncomp_vec," pc's")
-
-for(k in 1:K){
-	cat("Fold",k,"... ")
-
-	inds <- which(fold_assignments==k)
-	
-	score_te <- score80[inds]
-	data_tr <- data80[-inds]
-	data_te <- data80[inds]
-	
-	pcr_model <- pcr(normA_tract_score~.,data=data_tr,scale=TRUE,validation="CV")
-  
-	pcr_pred1 <- predict(pcr_model, data_te, ncomp = ncomp_vec[1])
-  pcr_pred2 <- predict(pcr_model, data_te, ncomp = ncomp_vec[2])
-  pcr_pred3 <- predict(pcr_model, data_te, ncomp = ncomp_vec[3])
-  pcr_pred4 <- predict(pcr_model, data_te, ncomp = ncomp_vec[4])
-  pcr_pred5 <- predict(pcr_model, data_te, ncomp = ncomp_vec[5])
-
-	err_cv[k,1] <- mean((score_te-pcr_pred1)^2) 
-	err_cv[k,2] <- mean((score_te-pcr_pred2)^2) 
-	err_cv[k,3] <- mean((score_te-pcr_pred3)^2) 
-	err_cv[k,4] <- mean((score_te-pcr_pred4)^2) 
-	err_cv[k,5] <- mean((score_te-pcr_pred5)^2) 
-}
-
-err_cv_ave<-colMeans(err_cv)
-# err_cv_se<-apply(err_cv,2,sd)/sqrt(K)
-# err_cv
-# err_cv_se
-err_cv_ave
-
-```
-
-```{r echo=FALSE, warning=FALSE}
-thisPc<-7
-print(paste(thisPc," pc's have been selected base on the minimum error & the least number of pc's"))
-```
-
-```{r echo=FALSE, warning=FALSE}
-pcr_model <- pcr(normA_tract_score~.,data=data80,scale=TRUE,validation="CV")
-# #Plot the root mse
-# validationplot(pcr_model)
-# #Plot the cv mse
-# validationplot(pcr_model,val.type="MSEP")
-# #Plot the R2
-# validationplot(pcr_model, val.type = "R2")
-# #Plot the regression coefficients 
-# coefplot(pcr_model)
-# #Plot the predicted vs measured values with ncomp = 16
-# predplot(pcr_model,ncomp=16)
-pcr_pred7 <- predict(pcr_model,data_true,ncomp=thisPc)
-```
-
-###Ridge & Lasso regression
-```{r echo=FALSE, warning=FALSE}
-#we do not need "y" in the xtrain matrix when running ridge and lasso
-data80$normA_tract_score<-NULL
-data80$CountyCode<-NULL
-data80$CountyName<-NULL
-data80$highbroadbandadoptionrate<-NULL
-data80$countyname<-NULL
-data_true$normA_tract_score<-NULL
-data_true$CountyCode<-NULL
-data_true$CountyName<-NULL
-data_true$highbroadbandadoptionrate<-NULL
-data_true$countyname<-NULL
-```
-
-```
-Ridge & Lasso
-5 - folds Cross Validation to choose the shrinkgage parameter (lambdas)
-```
-```{r warning=FALSE}
-grid <- 10^seq(0,-20,length=100)
-
-cv_rid <- cv.glmnet(as.matrix(data80),score80,lambda=grid,alpha=0,nfolds=5)
-cv_las <- cv.glmnet(as.matrix(data80),score80,lambda=grid,alpha=1,nfolds=5)
-
-#Choosing Lambda using the usual rule
-rid_lam_min <- cv_rid$lambda.min
-las_lam_min <- cv_las$lambda.min
-
-#Choosing Lambda using the one standard error rule
-rid_lam_1se <- cv_rid$lambda.1se
-las_lam_1se <- cv_las$lambda.1se
-
-rid_mod <- glmnet(as.matrix(data80),score80,lambda=grid,alpha=0)
-las_mod <- glmnet(as.matrix(data80),score80,lambda=grid,alpha=1)
-
-#Ridge Regression Coefficients
-rid_coeff_min <- predict(rid_mod, s = rid_lam_min , type="coef")
-rid_coeff_1se <- predict(rid_mod, s = rid_lam_1se, type="coef")
-
-#Lasso Regression Coefficients
-las_coeff_min <- predict(las_mod, s = las_lam_min, type="coef")
-las_coeff_1se <- predict(las_mod, s = las_lam_1se, type="coef")
-
-rid_min_pred <- predict(rid_mod,newx=as.matrix(data_true),s=rid_lam_min)
-rid_1se_pred <- predict(rid_mod,newx=as.matrix(data_true),s=rid_lam_1se)
-las_min_pred <- predict(las_mod,newx=as.matrix(data_true),s=las_lam_min)
-las_1se_pred <- predict(las_mod,newx=as.matrix(data_true),s=las_lam_1se)
-```
-
-##2. Predicting the "true" : 20% of the data
-### MSE comparison
-```{r echo=FALSE, warning=FALSE}
-mse_rid_min <- mean((score_true-rid_min_pred)^2)
-mse_rid_1se <- mean((score_true-rid_1se_pred)^2)
-mse_las_min <- mean((score_true-las_min_pred)^2)
-mse_las_1se <- mean((score_true-las_1se_pred)^2)
-mse_pcr_7 <- mean((score_true-pcr_pred7)^2)
-
-cat(paste("MSE - Ridge Minimum    ",mse_rid_min,sep = ":     "))
-cat(paste("MSE - Ridge 1se     ",mse_rid_min,sep = ":      "))
-cat(paste("MSE - Lasso Minimum     ",mse_las_min,sep = ":     "))
-cat(paste("MSE - Lasso 1se     ",mse_las_1se,sep = ":     "))
-cat(paste0(paste0("MSE - PCR with ",thisPc)," pc's      "),mse_pcr_7,sep = ":     ")
-```
-###Th lowest MSE model's coef
-```{r echo=FALSE, warning=FALSE}
-list_vec<-c(mse_rid_min,mse_rid_1se,mse_las_min,mse_las_1se,mse_pcr_7)
-this_vec<-c(rid_coeff_min,rid_coeff_1se,las_coeff_min,las_coeff_1se)
-this_number <- which.min(list_vec)
-if(this_number<5){
-  print(this_vec[this_number])
-} else {
-  print(pcr_model$coefficients[,,thisPc])
-}
-```
-
-###Final model: Predicted VS. True
-```{r echo=FALSE, warning=FALSE}
-useOne<- cbind(rid_min_pred,rid_1se_pred,las_min_pred,las_1se_pred,pcr_pred7)
-thisRange<-c(min(score_true,useOne[,this_number]),max(score_true,useOne[,this_number]))
-plot(useOne[,this_number]~score_true,ylab="Prediction",xlab="True",main=" normA_tract_score (20% of the data)",ylim=thisRange,xlim=thisRange);abline(0,1)
-```
-
-#Regression against Num_alcohol
-```
-Normalization - B - User level - Alcohol
-```
-```{r echo=FALSE, warning=FALSE}
-data_net_score <- cbind(normB_user_alc,xtrain)
-```
-##Principal components regression (PCR) & Ridge regression & Lasso regression  
-###Creating a "true" test set
-```
-                80%           20%
-Dependent     score80       score_true      <-how I called
-Data          data80        data_true       <-how I called
-```
-```{r echo=FALSE, warning=FALSE}
-set.seed(1)
-K <- 5
-n <- nrow(data_net_score)
-fold_assignments <- rep(1:K,length=n)
-fold_assignments <- sample(fold_assignments)
-myRandomNumber <- 5
-inds <- which(fold_assignments==myRandomNumber)
-score_true <- normB_user_alc[inds]
-data_true <- data_net_score[inds]
-score80 <- normB_user_alc[-inds]
-data80 <- data_net_score[-inds]
-```
-
-##1. Three models on 80% of the data 
-###PCR
-```
-5 - folds Cross Validation to choose the best number of principal components
-```
-```{r warning=FALSE}
-set.seed(1)
-K <- 5
-n <- nrow(data80)
-fold_assignments <- rep(1:K,length=n)
-fold_assignments <- sample(fold_assignments)
-
-err_cv <- matrix(0,nrow=5,ncol=5)
-
-# #--1--No removing 
-# ncomp_vec<-c(5,8,10,15,20)
-#--2--removing log, Z, variables
-ncomp_vec<-c(3,7,20,30,40)
-# #--3--removing original variables
-# ncomp_vec<-c(3,7,20,25,40)
-
-
-colnames(err_cv) <- paste(ncomp_vec," pc's")
-
-
-for(k in 1:K){
-	cat("Fold",k,"... ")
-
-	inds <- which(fold_assignments==k)
-	
-	score_te <- score80[inds]
-	data_tr <- data80[-inds]
-	data_te <- data80[inds]
-	
-	pcr_model <- pcr(normB_user_alc~.,data=data_tr,scale=TRUE,validation="CV")
-
-	pcr_pred1 <- predict(pcr_model, data_te, ncomp = ncomp_vec[1])
-  pcr_pred2 <- predict(pcr_model, data_te, ncomp = ncomp_vec[2])
-  pcr_pred3 <- predict(pcr_model, data_te, ncomp = ncomp_vec[3])
-  pcr_pred4 <- predict(pcr_model, data_te, ncomp = ncomp_vec[4])
-  pcr_pred5 <- predict(pcr_model, data_te, ncomp = ncomp_vec[5])
-
-	err_cv[k,1] <- mean((score_te-pcr_pred1)^2) 
-	err_cv[k,2] <- mean((score_te-pcr_pred2)^2) 
-	err_cv[k,3] <- mean((score_te-pcr_pred3)^2) 
-	err_cv[k,4] <- mean((score_te-pcr_pred4)^2) 
-	err_cv[k,5] <- mean((score_te-pcr_pred5)^2) 
-}
-
-err_cv_ave<-colMeans(err_cv)
-# err_cv_se<-apply(err_cv,2,sd)/sqrt(K)
-# err_cv
-# err_cv_se
-err_cv_ave
-```
-```{r echo=FALSE, warning=FALSE}
-thisPc<-3
-print(paste(thisPc," pc's have been selected base on the minimum error & the least number of pc's"))
-```
-
-```{r echo=FALSE, warning=FALSE}
-
-pcr_model <- pcr(normB_user_alc~.,data=data80,scale=TRUE,validation="CV")
-# #Plot the root mse
-# validationplot(pcr_model)
-# #Plot the cv mse
-# validationplot(pcr_model,val.type="MSEP")
-# #Plot the R2
-# validationplot(pcr_model, val.type = "R2")
-# #Plot the regression coefficients 
-# coefplot(pcr_model)
-# #Plot the predicted vs measured values with ncomp = 16
-# predplot(pcr_model,ncomp=16)
-pcr_pred7 <- predict(pcr_model,data_true,ncomp=thisPc)
-```
-
-###Ridge & Lasso regression
-```{r echo=FALSE, warning=FALSE}
-#we do not need "y" in the xtrain matrix when running ridge and lasso
-data80$normB_user_alc<-NULL
-data80$CountyCode<-NULL
-data80$CountyName<-NULL
-data80$highbroadbandadoptionrate<-NULL
-data80$countyname<-NULL
-data_true$normB_user_alc<-NULL
-data_true$CountyCode<-NULL
-data_true$CountyName<-NULL
-data_true$highbroadbandadoptionrate<-NULL
-data_true$countyname<-NULL
-```
-
-```
-Ridge & Lasso
-5 - folds Cross Validation to choose the shrinkgage parameter (lambdas)
-```
-```{r warning=FALSE}
-grid <- 10^seq(0,-20,length=100)
-
-cv_rid <- cv.glmnet(as.matrix(data80),score80,lambda=grid,alpha=0,nfolds=5)
-cv_las <- cv.glmnet(as.matrix(data80),score80,lambda=grid,alpha=1,nfolds=5)
-
-#Choosing Lambda using the usual rule
-rid_lam_min <- cv_rid$lambda.min
-las_lam_min <- cv_las$lambda.min
-
-#Choosing Lambda using the one standard error rule
-rid_lam_1se <- cv_rid$lambda.1se
-las_lam_1se <- cv_las$lambda.1se
-
-rid_mod <- glmnet(as.matrix(data80),score80,lambda=grid,alpha=0)
-las_mod <- glmnet(as.matrix(data80),score80,lambda=grid,alpha=1)
-
-#Ridge Regression Coefficients
-rid_coeff_min <- predict(rid_mod, s = rid_lam_min , type="coef")
-rid_coeff_1se <- predict(rid_mod, s = rid_lam_1se, type="coef")
-
-#Lasso Regression Coefficients
-las_coeff_min <- predict(las_mod, s = las_lam_min, type="coef")
-las_coeff_1se <- predict(las_mod, s = las_lam_1se, type="coef")
-
-rid_min_pred <- predict(rid_mod,newx=as.matrix(data_true),s=rid_lam_min)
-rid_1se_pred <- predict(rid_mod,newx=as.matrix(data_true),s=rid_lam_1se)
-las_min_pred <- predict(las_mod,newx=as.matrix(data_true),s=las_lam_min)
-las_1se_pred <- predict(las_mod,newx=as.matrix(data_true),s=las_lam_1se)
-```
-
-##2. Predicting the "true" : 20% of the data
-### MSE comparison
-```{r echo=FALSE, warning=FALSE}
-mse_rid_min <- mean((score_true-rid_min_pred)^2)
-mse_rid_1se <- mean((score_true-rid_1se_pred)^2)
-mse_las_min <- mean((score_true-las_min_pred)^2)
-mse_las_1se <- mean((score_true-las_1se_pred)^2)
-mse_pcr_7 <- mean((score_true-pcr_pred7)^2)
-
-cat(paste("MSE - Ridge Minimum    ",mse_rid_min,sep = ":     "))
-cat(paste("MSE - Ridge 1se     ",mse_rid_1se,sep = ":      "))
-cat(paste("MSE - Lasso Minimum     ",mse_las_min,sep = ":     "))
-cat(paste("MSE - Lasso 1se     ",mse_las_1se,sep = ":     "))
-cat(paste0(paste0("MSE - PCR with ",thisPc)," pc's      "),mse_pcr_7,sep = ":     ")
-```
-###Printing the lowest MSE model's coef
-```{r echo=FALSE, warning=FALSE}
-list_vec<-c(mse_rid_min,mse_rid_1se,mse_las_min,mse_las_1se,mse_pcr_7)
-this_vec<-c(rid_coeff_min,rid_coeff_1se,las_coeff_min,las_coeff_1se)
-if(which.min(list_vec)<5){
-  print(this_vec[which.min(list_vec)])
-} else {
-  print(pcr_model$coefficients[,,thisPc])
-}
-```
-###Final model: Predicted VS. True 
-```{r echo=FALSE, warning=FALSE}
-useOne<- cbind(rid_min_pred,rid_1se_pred,las_min_pred,las_1se_pred,pcr_pred7)
-thisRange<-c(min(score_true,useOne[,this_number]),max(score_true,useOne[,this_number]))
-plot(useOne[,this_number]~score_true,ylab="Prediction",xlab="True",main=" normB_user_num_alcohol (20% of the data)",ylim=thisRange,xlim=thisRange);abline(0,1)
-```
-
-#Classification - predicting counties
-
-##Random Forests 
-
-###Creating a "true" test set
-```
-                80%           20%
-County       class80       class_true       <-how I called
-Data         data80        data_true        <-how I called
-
-```
-```{r echo=FALSE, warning=FALSE}
-set.seed(1)
-class_dt <- dt
-class_dt$countyname <- NULL
-class_dt$CountyName <- NULL
-class_dt$GEOID10 <- NULL
-class_dt$tract <- NULL
-class_dt$highbroadbandadoptionrate<- ifelse(class_dt$highbroadbandadoptionrate=="Y", 1, 0)
-
-countyCode <- class_dt$CountyCode
-class_dt$CountyCode<-NULL
-class_dt<-cbind(countyCode,class_dt)
-K <- 5
-n <- nrow(class_dt)
-fold_assignments <- rep(1:K,length=n)
-fold_assignments <- sample(fold_assignments)
-myRandomNumber <- 5
-inds <- which(fold_assignments==myRandomNumber)
-
-data_true <- as.matrix(class_dt[inds])
-data80 <- as.matrix(class_dt[-inds])
-
-dataColumnNames <- colnames(data80)
-classColumn <- 1
-cols = c(1:ncol(data80))
-data_true <- sapply(cols, function(x) as.numeric(as.character(data_true[,x])))
-data80 <- sapply(cols, function(x) as.numeric(as.character(data80[,x])))
-```
-
-##1. Variable Screening
-```{r warning=FALSE}
-dataCol <- function(ddff,cutoffs,classNum){
-  cor_train<-cor(ddff)
-  inds<-which(abs(as.vector(cor_train[classNum,]))>cutoffs)
-  newdata80<-ddff[,inds]
-  return(newdata80)
-}
-dataCol_for_test <-function(test,ddff,cutoffs,classNum){
-  cor_train<-cor(ddff)
-  inds<-which(abs(as.vector(cor_train[classNum,]))>cutoffs)
-  newtest<-test[,inds]
-  return(newtest)
-}
-nfoldsRf <- function(ddff,ccc,nfolds,seeed,classNum){
-  #ddff, nfolds,seed
-  newddff<-dataCol(ddff,ccc,classNum)
-  set.seed(seeed)
-  K <- nfolds
-  n <- nrow(newddff)
-  fold_assignments <- rep(1:K,length=n)
-  fold_assignments <- sample(fold_assignments)
-  list_rf_county<-NULL
-  
-  for( k in 1:K) {
-    test <- which(fold_assignments==k)
-    fold_train <- newddff[-test,]
-    fold_test <- newddff[test,]
-    
-    rf_county<-randomForest(x=as.matrix(fold_train[,-classNum]),y=as.factor(fold_train[,classNum]),xtest=as.matrix(fold_test[,-classNum]),ytest=as.factor(fold_test[,classNum]),keep.forest=TRUE)  
-    list_rf_county[[k]]<-rf_county
-  }
-  return(list_rf_county)
-}
-
-# #--1--No removing 
-# cutoff_list<-c(0,0.1,0.18,0.19,0.20,0.21,0.40)
-#--2--removing log, Z, variables
-cutoff_list<-c(0,0.1,0.14,0.15,0.16,0.17,0.18)
-# #--3--removing original variables
-# cutoff_list<-c(0,0.1,0.15,0.17,0.19,0.22,0.25)
-
-rf1<-nfoldsRf(data80,cutoff_list[1],5,1,classColumn)
-rf2<-nfoldsRf(data80,cutoff_list[2],5,1,classColumn)
-rf3<-nfoldsRf(data80,cutoff_list[3],5,1,classColumn)
-rf4<-nfoldsRf(data80,cutoff_list[4],5,1,classColumn)
-rf5<-nfoldsRf(data80,cutoff_list[5],5,1,classColumn)
-rf6<-nfoldsRf(data80,cutoff_list[6],5,1,classColumn)
-rf7<-nfoldsRf(data80,cutoff_list[7],5,1,classColumn)
-```
+##Dependent variables (DV)
 ```{r echo=FALSE,warning=FALSE}
-big_list<-list(rf1,rf2,rf3,rf4,rf5,rf6,rf6,rf7)
+ys<-colnames(dt)[which(colnames(dt)=="NormA_tract_score_healthy"):ncol(dt)]
 
-cor_train<-cor(data80)
-print("Number of variables      A cutoff point      Out-Of-Bag estimate of error rate")
-store_cutoffs<-c()
-store_oob<-c()
+ytable<-dt[,ys,with=FALSE]
+```
+```
+Normalization A - Num food words
 
-for (i in 1:7){
-  rr<-big_list[[i]]
-  cc<-c()
-  for (j in 1:5){
-    cc<-c(cc,colMeans(rr[[j]]$err.rate)[1])
+  NormA_tract_score_healthy
+  NormA_tract_score_unhealthy
+  NormA_tract_net_score
+  
+  NormA_user_score_unhealthy
+  NormA_user_net_score   
+  NormA_user_score_healthy  
+
+Normalization B - Food/Alcohol related tweets
+
+  NormB_tract_score_healthy
+  NormB_tract_score_unhealthy
+  NormB_tract_net_score
+  NormB_tract_num_alcohol_words
+  
+  NormB_user_score_healthy 
+  NormB_user_score_unhealthy
+  NormB_user_net_score   
+  NormB_user_num_alcohol_words
+
+```
+
+#Exploratory Data Anlaysis - Independent Variables 
+<!-- ##Summary Statistics  -->
+
+<!-- ```{r echo=FALSE,warning=FALSE} -->
+<!-- summary(xtable) -->
+<!-- ``` -->
+
+```{r echo=FALSE, warning=FALSE}
+## - - -  linear regression functions are defined here. 
+selectingXs <- function(ddtt,thisyy){
+  thisXs<-c()
+  for ( i in 1:ncol(ddtt)){
+    thisdt <- cbind(thisyy,ddtt[[i]])
+    eachlm<-lm(thisyy~V2,data=data.table(thisdt))
+    # summary(eachlm)$r.squared
+    f<-summary(eachlm)$fstatistic
+    p<-pf(f[1],f[2],f[3],lower.tail=F)
+    if (p < 0.15){
+      thisXs<-c(thisXs,i)
+     }
   }
-  thisVariable<-length(which(abs(as.vector(cor_train[1,]))>cutoff_list[i]))
-  thisCutoff<-cutoff_list[i]
-  thisMean<-mean(cc)
-  print(paste(thisVariable,paste(thisCutoff,thisMean,sep="      "),sep="      "))
-  store_cutoffs<-c(store_cutoffs,thisCutoff)
-  store_oob<-c(store_oob,thisMean)
+  return(thisXs)
 }
-selectedCutoff<-store_cutoffs[which.min(store_oob)]
+
+createfinal<-function(ddtt,xxx,yy){
+  thisxtable<-ddtt[,xxx,with=FALSE]
+  return(cbind(yy,thisxtable))
+}
+
+drawhist<-function(zzz,yyy){
+  hist(rstandard(zzz),xlab="Regresion Standardized Residual",main=paste("Histogram\nDependent variable : ",yyy,sep=""))
+}
+
+drawpp<-function(zzz,yyy){
+  # par(mfrow=c(2,1))
+  # qqnorm(rstandard(lm_step),ylab="Standardized Residuals",xlab="Normal Scores") 
+  # qqline(rstandard(lm_step))
+  tmp1 <- rstandard(zzz)
+  tmp2 <- pnorm( tmp1, 0, summary(zzz)$sigma )
+  plot( ppoints(length(tmp1)),sort(tmp2), xlab="Theoretical Percentiles",ylab="Sample Percentiles",main=paste("Normal P-P Plot of Regression Standardized Residual\nDependent variable : ",yyy,sep=""))
+  abline(0,1)
+}
+
+drawscatter<-function(zzz,yc,yyy){
+  #only selected variables...(NA'sremoved by lm function automatically) (this is because we did not want to start with na.omit.....)
+  onlyThis<-as.numeric(names(rstandard(zzz)))
+  minz<-min(rstandard(zzz),na.omit(yc[onlyThis]))
+  maxz<-max(rstandard(zzz),na.omit(yc[onlyThis]))
+  plot(rstandard(zzz),yc[onlyThis],xlab="Regression Standardized Predicted Value",ylab=yyy,main=paste("Scatterplot\nDependent variable : ",yyy,sep=""),ylim=c(minz,maxz),xlim=c(minz,maxz))
+  abline(0,1,h=0,v=0)
+}
+
 ```
 
-```{r echo=FALSE,warning=FALSE}
-print(paste0("Cutoff point: ",paste0(selectedCutoff," has been chosen")))
+#Linear regression - NormA_user_net_score
+```{r echo=FALSE, warning=FALSE}
+thisY<-which(ys=="NormA_user_net_score") #thisY follows the order of ys vector
+y_name<-ys[thisY]
+y_vec<-ytable[[y_name]]
+print(y_name)
+```
+##Simple Linear ression against each IV
+```
+ran simple linear regression against each IV 
+
+selected any IV's - p-value is less than 0.10
+
+```
+### all available X's
+```{r echo=FALSE, warning=FALSE}
+options(width = 100)
+print(colnames(xtable_food))
+```
+### not selected X's
+```{r echo=FALSE, warning=FALSE}
+options(width = 100)
+x_vec<-selectingXs(xtable_food,y_vec)
+print(colnames(xtable_food)[which(!(c(1:length(colnames(xtable_food))) %in% x_vec))])
+```
+### selected X's
+```{r echo=FALSE, warning=FALSE}
+options(width = 100)
+print(colnames(xtable_food)[x_vec])
 ```
 
-##2. Runnning a model & 30 most import variables
-```{r warning=FALSE,fig.width=16,fig.height=10}
-train <- dataCol(data80,selectedCutoff,classColumn)
-test <- dataCol_for_test(data_true,data80,selectedCutoff,classColumn)
-rf<-randomForest(x=train[,-1],y=as.factor(train[,1]),keep.forest=TRUE) 
-pred_rf<-predict(rf,newdata=test[,-1],predict.all=T)
-thisLabel<-rev(dataColumnNames[rev(order(rf$importance))][1:30])
-varImpPlot(rf,labels=thisLabel)
+##Linear regression against selected IV's 
+```{r echo=FALSE, warning=FALSE}
+options(width = 300)
+selectedOnes<-createfinal(xtable_food,x_vec,y_vec)
+slm<-lm(yy~.,data=selectedOnes)
+summary(slm)
 ```
-
-##3. Final test
+###Plots
+```{r echo=FALSE, warning=FALSE}
+drawhist(slm,y_name)
 ```
-Genesee      Lapeer      Lenawee     Livingston     Macomb 
-26049        26087       26091       26093          26099
- 
-Monroe       Oakland     St. Clair   Washtenaw      Wayne
-26115        26125       26147       26161          26163
+```
 ```
 ```{r echo=FALSE, warning=FALSE}
-confusionMatrix(pred_rf[[1]],test[,1])
+drawpp(slm,y_name)
+```
+```
+```
+```{r echo=FALSE, warning=FALSE}
+drawscatter(slm,y_vec,y_name)
 ```
 
+##Stepwise linear regression against selected IV's - dirction = forward 
+```{r echo=FALSE, warning=FALSE, comment=FALSE,cache=FALSE, results=FALSE}
+lm_step<-step(lm(yy~.,data=na.omit(selectedOnes)),direction="forward")
+```
+###Final Model Summary 
+```{r echo=FALSE, warning=FALSE}
+options(width = 300)
+summary(lm_step)
+```
+####Same result - plots are same above
+
+
+#Linear regression - NormA_user_score_healthy
+```{r echo=FALSE, warning=FALSE}
+thisY<-which(ys=="NormA_user_score_healthy") #thisY follows the order of ys vector
+y_name<-ys[thisY]
+y_vec<-ytable[[y_name]]
+print(y_name)
+```
+##Simple Linear ression against each IV
+```
+ran simple linear regression against each IV 
+
+selected any IV's - p-value is less than 0.10
+
+```
+### all available X's
+```{r echo=FALSE, warning=FALSE}
+options(width = 100)
+print(colnames(xtable_food))
+```
+### not selected X's
+```{r echo=FALSE, warning=FALSE}
+options(width = 100)
+x_vec<-selectingXs(xtable_food,y_vec)
+print(colnames(xtable_food)[which(!(c(1:length(colnames(xtable_food))) %in% x_vec))])
+```
+### selected X's
+```{r echo=FALSE, warning=FALSE}
+options(width = 100)
+print(colnames(xtable_food)[x_vec])
+```
+
+##Linear regression against selected IV's 
+```{r echo=FALSE, warning=FALSE}
+options(width = 300)
+selectedOnes<-createfinal(xtable_food,x_vec,y_vec)
+slm<-lm(yy~.,data=selectedOnes)
+summary(slm)
+```
+###Plots
+```{r echo=FALSE, warning=FALSE}
+drawhist(slm,y_name)
+```
+```
+```
+```{r echo=FALSE, warning=FALSE}
+drawpp(slm,y_name)
+```
+```
+```
+```{r echo=FALSE, warning=FALSE}
+drawscatter(slm,y_vec,y_name)
+```
+
+##Stepwise linear regression against selected IV's - dirction = forward 
+```{r echo=FALSE, warning=FALSE, comment=FALSE,cache=FALSE, results=FALSE}
+lm_step<-step(lm(yy~.,data=na.omit(selectedOnes)),direction="forward")
+```
+###Final Model Summary 
+```{r echo=FALSE, warning=FALSE}
+options(width = 300)
+summary(lm_step)
+```
+####Same result - plots are same above
+
+
+#Linear regression - NormA_user_score_unhealthy
+```{r echo=FALSE, warning=FALSE}
+thisY<-which(ys=="NormA_user_score_unhealthy") #thisY follows the order of ys vector
+y_name<-ys[thisY]
+y_vec<-ytable[[y_name]]
+print(y_name)
+```
+##Simple Linear ression against each IV
+```
+ran simple linear regression against each IV 
+
+selected any IV's - p-value is less than 0.10
+
+```
+### all available X's
+```{r echo=FALSE, warning=FALSE}
+options(width = 100)
+print(colnames(xtable_food))
+```
+### not selected X's
+```{r echo=FALSE, warning=FALSE}
+options(width = 100)
+x_vec<-selectingXs(xtable_food,y_vec)
+print(colnames(xtable_food)[which(!(c(1:length(colnames(xtable_food))) %in% x_vec))])
+```
+### selected X's
+```{r echo=FALSE, warning=FALSE}
+options(width = 100)
+print(colnames(xtable_food)[x_vec])
+```
+
+##Linear regression against selected IV's 
+```{r echo=FALSE, warning=FALSE}
+options(width = 300)
+selectedOnes<-createfinal(xtable_food,x_vec,y_vec)
+slm<-lm(yy~.,data=selectedOnes)
+summary(slm)
+```
+###Plots
+```{r echo=FALSE, warning=FALSE}
+drawhist(slm,y_name)
+```
+```
+```
+```{r echo=FALSE, warning=FALSE}
+drawpp(slm,y_name)
+```
+```
+```
+```{r echo=FALSE, warning=FALSE}
+drawscatter(slm,y_vec,y_name)
+```
+
+##Stepwise linear regression against selected IV's - dirction = forward 
+```{r echo=FALSE, warning=FALSE, comment=FALSE,cache=FALSE, results=FALSE}
+lm_step<-step(lm(yy~.,data=na.omit(selectedOnes)),direction="forward")
+```
+###Final Model Summary 
+```{r echo=FALSE, warning=FALSE}
+options(width = 300)
+summary(lm_step)
+```
+####Same result - plots are same above
+
+
+#Linear regression - NormB_user_net_score
+```{r echo=FALSE, warning=FALSE}
+thisY<-which(ys=="NormB_user_net_score") #thisY follows the order of ys vector
+y_name<-ys[thisY]
+y_vec<-ytable[[y_name]]
+print(y_name)
+```
+##Simple Linear ression against each IV
+```
+ran simple linear regression against each IV 
+
+selected any IV's - p-value is less than 0.10
+
+```
+### all available X's
+```{r echo=FALSE, warning=FALSE}
+options(width = 100)
+print(colnames(xtable_food))
+```
+### not selected X's
+```{r echo=FALSE, warning=FALSE}
+options(width = 100)
+x_vec<-selectingXs(xtable_food,y_vec)
+print(colnames(xtable_food)[which(!(c(1:length(colnames(xtable_food))) %in% x_vec))])
+```
+### selected X's
+```{r echo=FALSE, warning=FALSE}
+options(width = 100)
+print(colnames(xtable_food)[x_vec])
+```
+
+##Linear regression against selected IV's 
+```{r echo=FALSE, warning=FALSE}
+options(width = 300)
+selectedOnes<-createfinal(xtable_food,x_vec,y_vec)
+slm<-lm(yy~.,data=selectedOnes)
+summary(slm)
+```
+###Plots
+```{r echo=FALSE, warning=FALSE}
+drawhist(slm,y_name)
+```
+```
+```
+```{r echo=FALSE, warning=FALSE}
+drawpp(slm,y_name)
+```
+```
+```
+```{r echo=FALSE, warning=FALSE}
+drawscatter(slm,y_vec,y_name)
+```
+
+##Stepwise linear regression against selected IV's - dirction = forward 
+```{r echo=FALSE, warning=FALSE, comment=FALSE,cache=FALSE, results=FALSE}
+lm_step<-step(lm(yy~.,data=na.omit(selectedOnes)),direction="forward")
+```
+###Final Model Summary 
+```{r echo=FALSE, warning=FALSE}
+options(width = 300)
+summary(lm_step)
+```
+####Same result - plots are same above
 
 
 
+#Linear regression - NormB_user_score_healthy
+```{r echo=FALSE, warning=FALSE}
+thisY<-which(ys=="NormB_user_score_healthy") #thisY follows the order of ys vector
+y_name<-ys[thisY]
+y_vec<-ytable[[y_name]]
+print(y_name)
+```
+##Simple Linear ression against each IV
+```
+ran simple linear regression against each IV 
+
+selected any IV's - p-value is less than 0.10
+
+```
+### all available X's
+```{r echo=FALSE, warning=FALSE}
+options(width = 100)
+print(colnames(xtable_food))
+```
+### not selected X's
+```{r echo=FALSE, warning=FALSE}
+options(width = 100)
+x_vec<-selectingXs(xtable_food,y_vec)
+print(colnames(xtable_food)[which(!(c(1:length(colnames(xtable_food))) %in% x_vec))])
+```
+### selected X's
+```{r echo=FALSE, warning=FALSE}
+options(width = 100)
+print(colnames(xtable_food)[x_vec])
+```
+
+##Linear regression against selected IV's 
+```{r echo=FALSE, warning=FALSE}
+options(width = 300)
+selectedOnes<-createfinal(xtable_food,x_vec,y_vec)
+slm<-lm(yy~.,data=selectedOnes)
+summary(slm)
+```
+###Plots
+```{r echo=FALSE, warning=FALSE}
+drawhist(slm,y_name)
+```
+```
+```
+```{r echo=FALSE, warning=FALSE}
+drawpp(slm,y_name)
+```
+```
+```
+```{r echo=FALSE, warning=FALSE}
+drawscatter(slm,y_vec,y_name)
+```
+
+##Stepwise linear regression against selected IV's - dirction = forward 
+```{r echo=FALSE, warning=FALSE, comment=FALSE,cache=FALSE, results=FALSE}
+lm_step<-step(lm(yy~.,data=na.omit(selectedOnes)),direction="forward")
+```
+###Final Model Summary 
+```{r echo=FALSE, warning=FALSE}
+options(width = 300)
+summary(lm_step)
+```
+####Same result - plots are same above
+
+#Linear regression - NormB_user_score_unhealthy
+```{r echo=FALSE, warning=FALSE}
+thisY<-which(ys=="NormB_user_score_unhealthy") #thisY follows the order of ys vector
+y_name<-ys[thisY]
+y_vec<-ytable[[y_name]]
+print(y_name)
+```
+##Simple Linear ression against each IV
+```
+ran simple linear regression against each IV 
+
+selected any IV's - p-value is less than 0.10
+
+```
+### all available X's
+```{r echo=FALSE, warning=FALSE}
+options(width = 100)
+print(colnames(xtable_food))
+```
+### not selected X's
+```{r echo=FALSE, warning=FALSE}
+options(width = 100)
+x_vec<-selectingXs(xtable_food,y_vec)
+print(colnames(xtable_food)[which(!(c(1:length(colnames(xtable_food))) %in% x_vec))])
+```
+### selected X's
+```{r echo=FALSE, warning=FALSE}
+options(width = 100)
+print(colnames(xtable_food)[x_vec])
+```
+
+##Linear regression against selected IV's 
+```{r echo=FALSE, warning=FALSE}
+options(width = 300)
+selectedOnes<-createfinal(xtable_food,x_vec,y_vec)
+slm<-lm(yy~.,data=selectedOnes)
+summary(slm)
+```
+###Plots
+```{r echo=FALSE, warning=FALSE}
+drawhist(slm,y_name)
+```
+```
+```
+```{r echo=FALSE, warning=FALSE}
+drawpp(slm,y_name)
+```
+```
+```
+```{r echo=FALSE, warning=FALSE}
+drawscatter(slm,y_vec,y_name)
+```
+
+##Stepwise linear regression against selected IV's - dirction = forward 
+```{r echo=FALSE, warning=FALSE, comment=FALSE,cache=FALSE, results=FALSE}
+lm_step<-step(lm(yy~.,data=na.omit(selectedOnes)),direction="forward")
+```
+###Final Model Summary 
+```{r echo=FALSE, warning=FALSE}
+options(width = 300)
+summary(lm_step)
+```
+####Same result - plots are same above
+
+#Linear regression - NormB_user_num_alcohol_words
+```{r echo=FALSE, warning=FALSE}
+thisY<-which(ys=="NormB_user_num_alcohol_words") #thisY follows the order of ys vector
+y_name<-ys[thisY]
+y_vec<-ytable[[y_name]]
+print(y_name)
+```
+##Simple Linear ression against each IV
+```
+ran simple linear regression against each IV 
+
+selected any IV's - p-value is less than 0.10
+
+```
+### all available X's
+```{r echo=FALSE, warning=FALSE}
+options(width = 100)
+print(colnames(xtable_alc))
+```
+### not selected X's
+```{r echo=FALSE, warning=FALSE}
+options(width = 100)
+x_vec<-selectingXs(xtable_alc,y_vec)
+print(colnames(xtable_alc)[which(!(c(1:length(colnames(xtable_alc))) %in% x_vec))])
+```
+### selected X's
+```{r echo=FALSE, warning=FALSE}
+options(width = 100)
+print(colnames(xtable_alc)[x_vec])
+```
+
+##Linear regression against selected IV's 
+```{r echo=FALSE, warning=FALSE}
+options(width = 300)
+selectedOnes<-createfinal(xtable_alc,x_vec,y_vec)
+slm<-lm(yy~.,data=selectedOnes)
+summary(slm)
+```
+###Plots
+```{r echo=FALSE, warning=FALSE}
+drawhist(slm,y_name)
+```
+```
+```
+```{r echo=FALSE, warning=FALSE}
+drawpp(slm,y_name)
+```
+```
+```
+```{r echo=FALSE, warning=FALSE}
+drawscatter(slm,y_vec,y_name)
+```
+
+##Stepwise linear regression against selected IV's - dirction = forward 
+```{r echo=FALSE, warning=FALSE, comment=FALSE,cache=FALSE, results=FALSE}
+lm_step<-step(lm(yy~.,data=na.omit(selectedOnes)),direction="forward")
+```
+###Final Model Summary 
+```{r echo=FALSE, warning=FALSE}
+options(width = 300)
+summary(lm_step)
+```
+####Same result - plots are same above
 
 
 
+<!-- #Classification - predicting counties -->
+
+<!-- ##Random Forests  -->
+
+<!-- ###Creating a "true" test set -->
+<!-- ``` -->
+<!--                 80%           20% -->
+<!-- County       class80       class_true       <-how I called -->
+<!-- Data         data80        data_true        <-how I called -->
+
+<!-- ``` -->
+<!-- ```{r echo=FALSE, warning=FALSE} -->
+<!-- set.seed(1) -->
+<!-- # newxtable<-na.omit(xtable) -->
+<!-- counties<-dt$countyname -->
+<!-- countyNames<-unique(counties) -->
+<!-- county_numeric<-seq(1,length(counties)) -->
+<!-- thisCode <- 1  -->
+<!-- for ( i in countyNames) { -->
+<!--   if ( i== "."){ -->
+<!--     county_numeric[which(counties == i)]<-NA -->
+<!--   } -->
+<!--   else{ -->
+<!--     county_numeric[which(counties == i)]<-thisCode -->
+<!--   thisCode <- thisCode+1  -->
+<!--    } -->
+<!-- } -->
+
+<!-- class_dt<-cbind(county_numeric,xtable) -->
+<!-- K <- 5 -->
+<!-- n <- nrow(class_dt) -->
+<!-- fold_assignments <- rep(1:K,length=n) -->
+<!-- fold_assignments <- sample(fold_assignments) -->
+<!-- myRandomNumber <- 5 -->
+<!-- inds <- which(fold_assignments==myRandomNumber) -->
+
+<!-- data_true <- as.matrix(class_dt[inds]) -->
+<!-- data80 <- as.matrix(class_dt[-inds]) -->
+
+<!-- dataColumnNames <- colnames(data80) -->
+<!-- classColumn <- 1 -->
+<!-- cols = c(1:ncol(data80)) -->
+<!-- data_true <- sapply(cols, function(x) as.numeric(as.character(data_true[,x]))) -->
+<!-- data80 <- sapply(cols, function(x) as.numeric(as.character(data80[,x]))) -->
+<!-- ``` -->
+
+<!-- ##1. Variable Screening -->
+<!-- ```{r warning=FALSE} -->
+<!-- dataCol <- function(ddff,cutoffs,classNum){ -->
+<!--   cor_train<-cor(ddff) -->
+<!--   inds<-which(abs(as.vector(cor_train[classNum,]))>cutoffs) -->
+<!--   newdata80<-ddff[,inds] -->
+<!--   return(newdata80) -->
+<!-- } -->
+<!-- dataCol_for_test <-function(test,ddff,cutoffs,classNum){ -->
+<!--   cor_train<-cor(ddff) -->
+<!--   inds<-which(abs(as.vector(cor_train[classNum,]))>cutoffs) -->
+<!--   newtest<-test[,inds] -->
+<!--   return(newtest) -->
+<!-- } -->
+<!-- nfoldsRf <- function(ddff,ccc,nfolds,seeed,classNum){ -->
+<!--   #ddff, nfolds,seed -->
+<!--   newddff<-dataCol(ddff,ccc,classNum) -->
+<!--   set.seed(seeed) -->
+<!--   K <- nfolds -->
+<!--   n <- nrow(newddff) -->
+<!--   fold_assignments <- rep(1:K,length=n) -->
+<!--   fold_assignments <- sample(fold_assignments) -->
+<!--   list_rf_county<-NULL -->
+
+<!--   for( k in 1:K) { -->
+<!--     test <- which(fold_assignments==k) -->
+<!--     fold_train <- newddff[-test,] -->
+<!--     fold_test <- newddff[test,] -->
+
+<!--     rf_county<-randomForest(x=as.matrix(fold_train[,-classNum]),y=as.factor(fold_train[,classNum]),xtest=as.matrix(fold_test[,-classNum]),ytest=as.factor(fold_test[,classNum]),keep.forest=TRUE)   -->
+<!--     list_rf_county[[k]]<-rf_county -->
+<!--   } -->
+<!--   return(list_rf_county) -->
+<!-- } -->
+
+<!-- # #--1--No removing  -->
+<!-- # cutoff_list<-c(0,0.1,0.18,0.19,0.20,0.21,0.40) -->
+<!-- #--2--removing log, Z, variables -->
+<!-- cutoff_list<-c(0,0.1,0.14,0.15,0.16,0.17,0.18) -->
+<!-- # #--3--removing original variables -->
+<!-- # cutoff_list<-c(0,0.1,0.15,0.17,0.19,0.22,0.25) -->
+
+<!-- rf1<-nfoldsRf(data80,cutoff_list[1],5,1,classColumn) -->
+<!-- rf2<-nfoldsRf(data80,cutoff_list[2],5,1,classColumn) -->
+<!-- rf3<-nfoldsRf(data80,cutoff_list[3],5,1,classColumn) -->
+<!-- rf4<-nfoldsRf(data80,cutoff_list[4],5,1,classColumn) -->
+<!-- rf5<-nfoldsRf(data80,cutoff_list[5],5,1,classColumn) -->
+<!-- rf6<-nfoldsRf(data80,cutoff_list[6],5,1,classColumn) -->
+<!-- rf7<-nfoldsRf(data80,cutoff_list[7],5,1,classColumn) -->
+<!-- ``` -->
+<!-- ```{r echo=FALSE,warning=FALSE} -->
+<!-- big_list<-list(rf1,rf2,rf3,rf4,rf5,rf6,rf6,rf7) -->
+
+<!-- cor_train<-cor(data80) -->
+<!-- print("Number of variables      A cutoff point      Out-Of-Bag estimate of error rate") -->
+<!-- store_cutoffs<-c() -->
+<!-- store_oob<-c() -->
+
+<!-- for (i in 1:7){ -->
+<!--   rr<-big_list[[i]] -->
+<!--   cc<-c() -->
+<!--   for (j in 1:5){ -->
+<!--     cc<-c(cc,colMeans(rr[[j]]$err.rate)[1]) -->
+<!--   } -->
+<!--   thisVariable<-length(which(abs(as.vector(cor_train[1,]))>cutoff_list[i])) -->
+<!--   thisCutoff<-cutoff_list[i] -->
+<!--   thisMean<-mean(cc) -->
+<!--   print(paste(thisVariable,paste(thisCutoff,thisMean,sep="      "),sep="      ")) -->
+<!--   store_cutoffs<-c(store_cutoffs,thisCutoff) -->
+<!--   store_oob<-c(store_oob,thisMean) -->
+<!-- } -->
+<!-- selectedCutoff<-store_cutoffs[which.min(store_oob)] -->
+<!-- ``` -->
+
+<!-- ```{r echo=FALSE,warning=FALSE} -->
+<!-- print(paste0("Cutoff point: ",paste0(selectedCutoff," has been chosen"))) -->
+<!-- ``` -->
+
+<!-- ##2. Runnning a model & 30 most import variables -->
+<!-- ```{r warning=FALSE,fig.width=16,fig.height=10} -->
+<!-- train <- dataCol(data80,selectedCutoff,classColumn) -->
+<!-- test <- dataCol_for_test(data_true,data80,selectedCutoff,classColumn) -->
+<!-- rf<-randomForest(x=train[,-1],y=as.factor(train[,1]),keep.forest=TRUE)  -->
+<!-- pred_rf<-predict(rf,newdata=test[,-1],predict.all=T) -->
+<!-- thisLabel<-rev(dataColumnNames[rev(order(rf$importance))][1:30]) -->
+<!-- varImpPlot(rf,labels=thisLabel) -->
+<!-- ``` -->
+
+<!-- ##3. Final test -->
+<!-- ``` -->
+<!-- Genesee      Lapeer      Lenawee     Livingston     Macomb  -->
+<!-- 26049        26087       26091       26093          26099 -->
+
+<!-- Monroe       Oakland     St. Clair   Washtenaw      Wayne -->
+<!-- 26115        26125       26147       26161          26163 -->
+<!-- ``` -->
+<!-- ```{r echo=FALSE, warning=FALSE} -->
+<!-- confusionMatrix(pred_rf[[1]],test[,1]) -->
+<!-- ``` -->
 
 
+<!-- #Multinomial Logistic regression -Unhealthy, Neutral, Healthy --> -->
+<!-- ##How did I create the values from NormA_tract_net_score? -->
+<!-- ```{r echo=FALSE, warning=FALSE} -->
+<!-- hist(dt$NormA_tract_net_score) -->
+<!-- ``` -->
 
+<!-- ``` -->
+<!-- [min    to -0.2)    -->   -1 -->
+<!-- [-0.2   to  0.2]    -->    0 -->
+<!-- (0.2    to  max]    -->    1 -->
+<!-- ``` -->
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+<!-- ```{r echo=FALSE, warning=FALSE} -->
+<!-- dt[["logit"]]<-0 -->
+<!-- for (i in 1:nrow(dt)){ -->
+<!--   if (!(is.na(dt$NormA_tract_net_score[i]))) { -->
+<!--     if(dt$NormA_tract_net_score[i]< (-0.1)){ -->
+<!--     dt$logit[i]<- -1 -->
+<!--   } else if (dt$NormA_tract_net_score[i]>(0.1)) { -->
+<!--     dt$logit[i] <- 1 -->
+<!--   } -->
+<!--   } -->
+<!-- } -->
+<!-- dt$logit <- as.factor(dt$logit) -->
+<!-- table(dt$logit) -->
+<!-- ``` -->
 
