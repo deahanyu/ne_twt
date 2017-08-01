@@ -1,11 +1,11 @@
 ---
-title: "twt_ne_food"
+title: "ne_twt_food"
 author: "Deahan Yu"
 date: "`r Sys.Date()`"
 output:
   rmdformats::readthedown
 ---
-```{r echo=FALSE, warning=FALSE, comment=FALSE, results=FALSE}
+```{r library, echo=FALSE, warning=FALSE, comment=FALSE, results=FALSE}
 #setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
 library(data.table)
 library(ggplot2)
@@ -16,9 +16,11 @@ library(glmnet)
 library(pls)
 library(randomForest)
 library(caret)
+library(remef)
+library(corrplot)
 ```
 
-```{r echo=FALSE, warning=FALSE, comment=FALSE,results=FALSE}
+```{r test, echo=FALSE, warning=FALSE, comment=FALSE,results=FALSE}
 dat<-matrix(NA,3,2)
 dat[1,]<-c(1,1)
 dat[2,]<-c(2,2)
@@ -33,8 +35,34 @@ lm<-lm(dat[,1]~dat[,2])
 # lm$coef
 # lm$model
 ```
-#Initial Step
-```{r echo=FALSE, warning=FALSE} 
+
+<!-- ```{r practiceTest} -->
+<!-- #selectingX part -->
+<!-- thisXs<-c() -->
+<!-- for ( i in 1:ncol(xtable_food)){ -->
+<!--   thisdt <- cbind(y_vec,xtable_food[[i]]) -->
+<!--   eachlm<-lm(y_vec~V2,data=data.table(thisdt)) -->
+<!--   # summary(eachlm)$r.squared -->
+<!--   print (colnames(xtable_food)[i]) -->
+<!--   print(summary(eachlm)) -->
+<!--   f<-summary(eachlm)$fstatistic -->
+<!--   p<-pf(f[1],f[2],f[3],lower.tail=F) -->
+<!--   if (p < 0.15){ -->
+<!--     thisXs<-c(thisXs,i) -->
+<!--    } -->
+<!-- } -->
+<!-- #createFinal -->
+<!-- thisxtable<-xtable_food[,thisXs,with=FALSE] -->
+<!-- selectedOnes<-cbind(y_vec,thisxtable) -->
+<!-- slm<-lm(y_vec~ZNeighborhood_Affluence_Index_2Vars_09_13+LOG10_fast_food_Density_2015+ZNeighborhood_Disadvantage_Index_3Vars_09_13+LOG10_twts_14_16+LOG10_PCT_18_to_29_09_13,data=selectedOnes) -->
+<!-- summary(slm) -->
+<!-- ``` -->
+
+
+
+
+```{r dataprep, echo=FALSE, warning=FALSE} 
+## - - -  Uploading Data
 dt <- data.table(read.csv(Sys.glob('output/*.csv'),header = TRUE, sep = ','))
 dt<-dt[,-(which(colnames(dt)=="num_healthy1"):which(colnames(dt)=="net_score"))]
 dt<-dt[,-(which(colnames(dt)=="num_unique_users"):which(colnames(dt)=="net_healthy_unhealthy_related_tweets"))]
@@ -50,7 +78,7 @@ for (i in colnames(dt)) {
     dt[,i] <- as.numeric(as.character(dt[[i]]))
   }
 }
-
+dt<-dt[-1,]
 #dropping variables that are >=400
 maxNum <- ncol(dt)
 for (j in maxNum:1){
@@ -63,10 +91,10 @@ for (j in maxNum:1){
 }
 #IV's end after "GEOID"
 IVnumbers<-which(colnames(dt)=="GEOID10")-1
-#colnames(dt) this is after dropping columns more than 400 na's
+
 
 ```
-#Exploratory
+#Exploratory - Normalization method 
 ##Our normalization methods
 ```
 Normalization A - Num food words
@@ -86,12 +114,14 @@ Tract-level
 User-level
   tweet-level  -->  user-level   -->  normalization  --> user-count average of tract-level
 ```
+##Plots
+```
+Left side compares normalzations                      Right side compares levels
 
+Different norms   A vs. B                        Same norms         
+Same level                                       Different level     Tact vs. User
 ```
-Different norms  A vs. B                             Same norms      AA and BB    
-Same level       TT and UU                       Different level     Tact vs. User
-```
-```{r echo=FALSE, warning=FALSE}
+```{r func1, echo=FALSE,warning=FALSE}
 makeGgp<-function(ddff,xx,xxlab,yy,yylab,mmin,mmax){
   ggp<-ggplot(ddff,aes(x=xx, y=yy))#,fill=countyname))
   ggp<-ggp+geom_point()#(aes(colour=countyname))
@@ -109,7 +139,8 @@ prettyScatterplot<-function(ddff,x1,x1lab,y1,y1lab,x2,x2lab,y2,y2lab,ttitle){
   ggp3<- makeGgp(ddff,x2,x2lab,x1,x1lab,fMin,fMax)
   return(grid.arrange(ggp,ggp1,ggp2,ggp3, nrow=2,ncol=2,top = ttitle))
 }
-
+```
+```{r echo=FALSE,warning=FALSE}
 prettyScatterplot(dt,dt$NormB_tract_score_healthy,"NormB_tract_score_healthy",dt$NormA_tract_score_healthy,"NormA_tract_score_healthy",dt$NormB_user_score_healthy,"NormB_user_score_healthy",dt$NormA_user_score_healthy,"NormA_user_score_healthy","score_healthy")
 
 prettyScatterplot(dt,dt$NormB_tract_score_unhealthy,"NormB_tract_score_unhealthy",dt$NormA_tract_score_unhealthy,"NormA_tract_score_unhealthy",dt$NormB_user_score_unhealthy,"NormB_user_score_unhealthy",dt$NormA_user_score_unhealthy,"NormA_user_score_unhealthy","score_unhealthy")
@@ -124,21 +155,19 @@ ggp1<-ggplot(pseudodt) + geom_point() + xlim(0, 10) + ylim(0, 10)
 grid.arrange(ggp1, ggp, ncol=2,top="num_alcohol_words")
 ```
 
-#Back to data analysis
-##First step
-```
-Our data set contains 1593 census tracts. (1593 rows)
 
-80% of census tracts with most tweets. 
-
-Now 
-```
+#Variables
+##Independent variables
 ```{r echo=FALSE, warning=FALSE}
-print (paste0("1593 BY 26 --> ",paste(nrow(dt),ncol(dt),sep=" BY ")))
-```
+#preserving only 80% of data with most twts
+dt<-dt[rev(order(num_tweets))][1:round(nrow(dt)*0.8),]
+howmanyzz<-nrow(dt)
+dt<-na.omit(dt)
+thisValue <- 2 # this is for rstandard()
+indexLookup <- seq(1,nrow(dt))
+logVector<-c()
 
-##Independent variables (IV)
-```{r echo=FALSE, warning=FALSE}
+
 #data prepartion for analyses
 LOG10_twts_14_16<-log10(dt$num_tweets)
 xtable<-cbind(dt[,1:IVnumbers],LOG10_twts_14_16)
@@ -156,54 +185,100 @@ xtable_alc<-xtable
 xtable_alc$LOG10_PCT_18_to_29_09_13<-NULL
 xtable_alc$LOG10_fast_food_Density_2015<-NULL
 ```
-###IV's for Food 
+###For food related y's
 ```{r echo=FALSE}
-print(xtable_food)
+print(colnames(xtable_food))
 ```
-###IV's for alcohol
+```
+Excluded variables:
+LOG10_PCT_21_to_29_09_13
+LOG10_Liquor_Density_2015
+LOG10_Religious_Density_2015
+```
+###For alcohol related  y's
 ```{r echo=FALSE}
-print(xtable_alc)
+print(colnames(xtable_alc))
 ```
-
-##Dependent variables (DV)
+```
+Excluded variables:
+LOG10_PCT_18_to_29_09_13
+LOG10_fast_food_Density_2015
+```
+##Dependent variables
 ```{r echo=FALSE,warning=FALSE}
 ys<-colnames(dt)[which(colnames(dt)=="NormA_tract_score_healthy"):ncol(dt)]
-
 ytable<-dt[,ys,with=FALSE]
+print(ys)
 ```
 ```
-Normalization A - Num food words
-
-  NormA_tract_score_healthy
-  NormA_tract_score_unhealthy
-  NormA_tract_net_score
-  
-  NormA_user_score_unhealthy
-  NormA_user_net_score   
-  NormA_user_score_healthy  
-
-Normalization B - Food/Alcohol related tweets
-
-  NormB_tract_score_healthy
-  NormB_tract_score_unhealthy
-  NormB_tract_net_score
-  NormB_tract_num_alcohol_words
-  
-  NormB_user_score_healthy 
-  NormB_user_score_unhealthy
-  NormB_user_net_score   
-  NormB_user_num_alcohol_words
-
+  Normalization A : divided by Num food words
+  Normalization B : divided by Food/Alcohol related tweets
 ```
 
-#Exploratory Data Anlaysis - Independent Variables 
 <!-- ##Summary Statistics  -->
 
 <!-- ```{r echo=FALSE,warning=FALSE} -->
 <!-- summary(xtable) -->
 <!-- ``` -->
+#Linear Regressions
+```
+Steps that I did 
 
-```{r echo=FALSE, warning=FALSE}
+1. Stepwise selection method is removed. 
+  It gives identically same results for all regressions.
+  In other words, it does not drop any variable. 
+
+2. Y transformation (Box-cox) is not helpful.
+  I tried this method but it was not really helpful. 
+  In fact, we get slightly less R-Squared values than before 
+  while we get about same significance levels.
+
+3. Removing influential points
+  There seemed to be some influential points.
+  Standardized residuals should be within -2 and 2 to be within 95% of data in a normal distribution.
+  There are some points having standardized residuals greater than 4.
+
+```
+
+```{r echo=FALSE,warning=FALSE}
+cat(paste0("4. Only 80% of census tracts with most tweets were used \n",paste0("1593 tracts --> ",howmanyzz)))
+```
+
+```
+For today's presentation,
+
+these steps below were used for each regression 
+
+Every Y's --> ran simple linear regression against each X 
+          --> only X's with p-value less than 0.15 was selected 
+          --> ran multivariate linear regression 
+          --> dropped any influential points (out of the 95% of data). 
+          --> re-ran the regression
+
+
+
+
+
+Table of contents (for below)
+
+  Net score 
+    NormA_tract_net_score
+    NormA_user_net_score
+    NormB_tract_net_score
+    NormB_user_net_score
+      
+  Score Healthy
+    NormA_tract_score_healthy
+    NormA_user_score_healthy
+    NormB_tract_score_healthy
+    NormB_user_score_healthy
+  
+  Score Unhealthy      
+  Alcohol (only for Norm B)
+  
+```
+
+```{r func2, echo=FALSE,warning=FALSE}
 ## - - -  linear regression functions are defined here. 
 selectingXs <- function(ddtt,thisyy){
   thisXs<-c()
@@ -229,481 +304,599 @@ drawhist<-function(zzz,yyy){
   hist(rstandard(zzz),xlab="Regresion Standardized Residual",main=paste("Histogram\nDependent variable : ",yyy,sep=""))
 }
 
-drawpp<-function(zzz,yyy){
-  # par(mfrow=c(2,1))
-  # qqnorm(rstandard(lm_step),ylab="Standardized Residuals",xlab="Normal Scores") 
-  # qqline(rstandard(lm_step))
-  tmp1 <- rstandard(zzz)
-  tmp2 <- pnorm( tmp1, 0, summary(zzz)$sigma )
-  plot( ppoints(length(tmp1)),sort(tmp2), xlab="Theoretical Percentiles",ylab="Sample Percentiles",main=paste("Normal P-P Plot of Regression Standardized Residual\nDependent variable : ",yyy,sep=""))
-  abline(0,1)
+drawpp<-function(zzz){
+  #par(mfrow=c(1,2))
+  qqnorm(rstandard(zzz),ylab="Standardized Residuals",xlab="Normal Scores") 
+  qqline(rstandard(zzz))
+  # tmp1 <- rstandard(zzz)
+  # tmp2 <- pnorm( tmp1, 0, summary(zzz)$sigma )
+  # plot( ppoints(length(tmp1)),sort(tmp2), xlab="Theoretical Percentiles",ylab="Sample Percentiles",main=paste("Normal P-P Plot of Regression \n Standardized Residual"))
+  # par(mfrow=c(1,1))
 }
 
 drawscatter<-function(zzz,yc,yyy){
   #only selected variables...(NA'sremoved by lm function automatically) (this is because we did not want to start with na.omit.....)
-  onlyThis<-as.numeric(names(rstandard(zzz)))
-  minz<-min(rstandard(zzz),na.omit(yc[onlyThis]))
-  maxz<-max(rstandard(zzz),na.omit(yc[onlyThis]))
-  plot(rstandard(zzz),yc[onlyThis],xlab="Regression Standardized Predicted Value",ylab=yyy,main=paste("Scatterplot\nDependent variable : ",yyy,sep=""),ylim=c(minz,maxz),xlim=c(minz,maxz))
-  abline(0,1,h=0,v=0)
+  # onlyThis<-as.numeric(names(rstandard(zzz)))
+  # minz<-min(rstandard(zzz),na.omit(yc[onlyThis]))
+  # maxz<-max(rstandard(zzz),na.omit(yc[onlyThis]))
+  # par(mfrow=c(1,2))
+  plot(zzz$fitted.values,rstandard(zzz),main="Standardized Residuals",xlab="Predicted values",ylab="Standardized Residuals ")
+  # plot(rstandard(zzz),yc[onlyThis],xlab="Regression Standardized Predicted Value",ylab=yyy,main="Scatterplot")#,ylim=c(minz,maxz),xlim=c(minz,maxz))
+  # abline(0,1,h=0,v=0)
+}
+
+multiLm<-function(xdata,yvec,yname,ques=0){
+  if (ques==0){
+    x_vec<-selectingXs(xdata,yvec)
+    options(width = 20)
+    selectedOnes<-createfinal(xdata,x_vec,yvec)
+    slm<-lm(yy~.,data=selectedOnes)
+    
+  } else{
+  cat("<h4 color='red'>not selected X's : p-value > 0.15 </h4>")
+  x_vec<-selectingXs(xdata,yvec)
+  options(width = 20)
+  if (length(which(!(c(1:length(colnames(xdata))) %in% x_vec)))>0){
+    print(colnames(xdata)[which(!(c(1:length(colnames(xdata))) %in% x_vec))])
+  }else{
+    print("None")
+  }
+  cat("<h4 color='red'>selected X's : p-value < 0.15</h4>")
+  print(colnames(xdata)[x_vec])
+  cat("<h4 color='red'>Linear regression against selected X's</h4>")
+  selectedOnes<-createfinal(xdata,x_vec,yvec)
+  slm<-lm(yy~.,data=selectedOnes)
+  }
+  
+  return(slm)
+}
+
+stepLm<-function(xdata,yvec,kk){
+  x_vec<-selectingXs(xdata,yvec)
+  selectedOnes<-createfinal(xdata,x_vec,yvec)
+  return(step(lm(yy~.,data=selectedOnes),direction = kk))
+}
+
+multiPlots<-function(slm,yvec,yname){
+  cat("<h5 color='red'>Plots</h5>")
+  drawhist(slm,yname)
+  drawpp(slm)
+  drawscatter(slm,yvec,yname)
+  options(width = 100)
 }
 
 ```
 
-#Linear regression - NormA_user_net_score
+#net_score
+
+##Normalization A - by the number of food words 
+###NormA_tract_net_score
+```{r echo=FALSE, warning=FALSE}
+thisY<-which(ys=="NormA_tract_net_score") #thisY follows the order of ys vector
+y_name<-ys[thisY]
+y_vec<-ytable[[y_name]]
+print(y_name)
+```
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multi_lm<-multiLm(xtable_food,y_vec,y_name)
+#this is to get rid of influential points -> grabbing only points within 95%
+thisRows<-as.vector(which(rstandard(multi_lm)>=-thisValue&rstandard(multi_lm)<=thisValue))
+#this is to see whether some rows are always outliers 
+logVector <- c(logVector,which(indexLookup %in% thisRows==FALSE))
+multi_lm<-multiLm(xtable_food[thisRows,],y_vec[thisRows],y_name,1)
+```
+```{r echo=FALSE}
+options(width = 300)
+summary(multi_lm)
+```
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multiPlots(multi_lm,y_vec[thisRows],y_name)
+```
+
+###NormA_user_net_score
 ```{r echo=FALSE, warning=FALSE}
 thisY<-which(ys=="NormA_user_net_score") #thisY follows the order of ys vector
 y_name<-ys[thisY]
 y_vec<-ytable[[y_name]]
 print(y_name)
 ```
-##Simple Linear ression against each IV
-```
-ran simple linear regression against each IV 
 
-selected any IV's - p-value is less than 0.10
 
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multi_lm<-multiLm(xtable_food,y_vec,y_name)
+#this is to get rid of influential points -> grabbing only points within 95%
+thisRows<-as.vector(which(rstandard(multi_lm)>=-thisValue&rstandard(multi_lm)<=thisValue))
+#this is to see whether some rows are always outliers 
+logVector <- c(logVector,which(indexLookup %in% thisRows==FALSE))
+multi_lm<-multiLm(xtable_food[thisRows,],y_vec[thisRows],y_name,1)
 ```
-### all available X's
-```{r echo=FALSE, warning=FALSE}
-options(width = 100)
-print(colnames(xtable_food))
-```
-### not selected X's
-```{r echo=FALSE, warning=FALSE}
-options(width = 100)
-x_vec<-selectingXs(xtable_food,y_vec)
-print(colnames(xtable_food)[which(!(c(1:length(colnames(xtable_food))) %in% x_vec))])
-```
-### selected X's
-```{r echo=FALSE, warning=FALSE}
-options(width = 100)
-print(colnames(xtable_food)[x_vec])
-```
-
-##Linear regression against selected IV's 
-```{r echo=FALSE, warning=FALSE}
+```{r echo=FALSE}
 options(width = 300)
-selectedOnes<-createfinal(xtable_food,x_vec,y_vec)
-slm<-lm(yy~.,data=selectedOnes)
-summary(slm)
+summary(multi_lm)
 ```
-###Plots
-```{r echo=FALSE, warning=FALSE}
-drawhist(slm,y_name)
-```
-```
-```
-```{r echo=FALSE, warning=FALSE}
-drawpp(slm,y_name)
-```
-```
-```
-```{r echo=FALSE, warning=FALSE}
-drawscatter(slm,y_vec,y_name)
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
 
-##Stepwise linear regression against selected IV's - dirction = forward 
-```{r echo=FALSE, warning=FALSE, comment=FALSE,cache=FALSE, results=FALSE}
-lm_step<-step(lm(yy~.,data=na.omit(selectedOnes)),direction="forward")
-```
-###Final Model Summary 
+##Normalization B - by the number of tweets
+###NormB_tract_net_score
 ```{r echo=FALSE, warning=FALSE}
-options(width = 300)
-summary(lm_step)
-```
-####Same result - plots are same above
-
-
-#Linear regression - NormA_user_score_healthy
-```{r echo=FALSE, warning=FALSE}
-thisY<-which(ys=="NormA_user_score_healthy") #thisY follows the order of ys vector
+thisY<-which(ys=="NormB_tract_net_score") #thisY follows the order of ys vector
 y_name<-ys[thisY]
 y_vec<-ytable[[y_name]]
 print(y_name)
 ```
-##Simple Linear ression against each IV
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multi_lm<-multiLm(xtable_food,y_vec,y_name)
+#this is to get rid of influential points -> grabbing only points within 95%
+thisRows<-as.vector(which(rstandard(multi_lm)>=-thisValue&rstandard(multi_lm)<=thisValue))
+#this is to see whether some rows are always outliers 
+logVector <- c(logVector,which(indexLookup %in% thisRows==FALSE))
+multi_lm<-multiLm(xtable_food[thisRows,],y_vec[thisRows],y_name,1)
 ```
-ran simple linear regression against each IV 
-
-selected any IV's - p-value is less than 0.10
-
-```
-### all available X's
-```{r echo=FALSE, warning=FALSE}
-options(width = 100)
-print(colnames(xtable_food))
-```
-### not selected X's
-```{r echo=FALSE, warning=FALSE}
-options(width = 100)
-x_vec<-selectingXs(xtable_food,y_vec)
-print(colnames(xtable_food)[which(!(c(1:length(colnames(xtable_food))) %in% x_vec))])
-```
-### selected X's
-```{r echo=FALSE, warning=FALSE}
-options(width = 100)
-print(colnames(xtable_food)[x_vec])
-```
-
-##Linear regression against selected IV's 
-```{r echo=FALSE, warning=FALSE}
+```{r echo=FALSE}
 options(width = 300)
-selectedOnes<-createfinal(xtable_food,x_vec,y_vec)
-slm<-lm(yy~.,data=selectedOnes)
-summary(slm)
+summary(multi_lm)
 ```
-###Plots
-```{r echo=FALSE, warning=FALSE}
-drawhist(slm,y_name)
-```
-```
-```
-```{r echo=FALSE, warning=FALSE}
-drawpp(slm,y_name)
-```
-```
-```
-```{r echo=FALSE, warning=FALSE}
-drawscatter(slm,y_vec,y_name)
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
 
-##Stepwise linear regression against selected IV's - dirction = forward 
-```{r echo=FALSE, warning=FALSE, comment=FALSE,cache=FALSE, results=FALSE}
-lm_step<-step(lm(yy~.,data=na.omit(selectedOnes)),direction="forward")
-```
-###Final Model Summary 
-```{r echo=FALSE, warning=FALSE}
-options(width = 300)
-summary(lm_step)
-```
-####Same result - plots are same above
 
-
-#Linear regression - NormA_user_score_unhealthy
-```{r echo=FALSE, warning=FALSE}
-thisY<-which(ys=="NormA_user_score_unhealthy") #thisY follows the order of ys vector
-y_name<-ys[thisY]
-y_vec<-ytable[[y_name]]
-print(y_name)
-```
-##Simple Linear ression against each IV
-```
-ran simple linear regression against each IV 
-
-selected any IV's - p-value is less than 0.10
-
-```
-### all available X's
-```{r echo=FALSE, warning=FALSE}
-options(width = 100)
-print(colnames(xtable_food))
-```
-### not selected X's
-```{r echo=FALSE, warning=FALSE}
-options(width = 100)
-x_vec<-selectingXs(xtable_food,y_vec)
-print(colnames(xtable_food)[which(!(c(1:length(colnames(xtable_food))) %in% x_vec))])
-```
-### selected X's
-```{r echo=FALSE, warning=FALSE}
-options(width = 100)
-print(colnames(xtable_food)[x_vec])
-```
-
-##Linear regression against selected IV's 
-```{r echo=FALSE, warning=FALSE}
-options(width = 300)
-selectedOnes<-createfinal(xtable_food,x_vec,y_vec)
-slm<-lm(yy~.,data=selectedOnes)
-summary(slm)
-```
-###Plots
-```{r echo=FALSE, warning=FALSE}
-drawhist(slm,y_name)
-```
-```
-```
-```{r echo=FALSE, warning=FALSE}
-drawpp(slm,y_name)
-```
-```
-```
-```{r echo=FALSE, warning=FALSE}
-drawscatter(slm,y_vec,y_name)
-```
-
-##Stepwise linear regression against selected IV's - dirction = forward 
-```{r echo=FALSE, warning=FALSE, comment=FALSE,cache=FALSE, results=FALSE}
-lm_step<-step(lm(yy~.,data=na.omit(selectedOnes)),direction="forward")
-```
-###Final Model Summary 
-```{r echo=FALSE, warning=FALSE}
-options(width = 300)
-summary(lm_step)
-```
-####Same result - plots are same above
-
-
-#Linear regression - NormB_user_net_score
+###NormB_user_net_score
 ```{r echo=FALSE, warning=FALSE}
 thisY<-which(ys=="NormB_user_net_score") #thisY follows the order of ys vector
 y_name<-ys[thisY]
 y_vec<-ytable[[y_name]]
 print(y_name)
 ```
-##Simple Linear ression against each IV
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multi_lm<-multiLm(xtable_food,y_vec,y_name)
+#this is to get rid of influential points -> grabbing only points within 95%
+thisRows<-as.vector(which(rstandard(multi_lm)>=-thisValue&rstandard(multi_lm)<=thisValue))
+#this is to see whether some rows are always outliers 
+logVector <- c(logVector,which(indexLookup %in% thisRows==FALSE))
+multi_lm<-multiLm(xtable_food[thisRows,],y_vec[thisRows],y_name,1)
 ```
-ran simple linear regression against each IV 
-
-selected any IV's - p-value is less than 0.10
-
-```
-### all available X's
-```{r echo=FALSE, warning=FALSE}
-options(width = 100)
-print(colnames(xtable_food))
-```
-### not selected X's
-```{r echo=FALSE, warning=FALSE}
-options(width = 100)
-x_vec<-selectingXs(xtable_food,y_vec)
-print(colnames(xtable_food)[which(!(c(1:length(colnames(xtable_food))) %in% x_vec))])
-```
-### selected X's
-```{r echo=FALSE, warning=FALSE}
-options(width = 100)
-print(colnames(xtable_food)[x_vec])
-```
-
-##Linear regression against selected IV's 
-```{r echo=FALSE, warning=FALSE}
+```{r echo=FALSE}
 options(width = 300)
-selectedOnes<-createfinal(xtable_food,x_vec,y_vec)
-slm<-lm(yy~.,data=selectedOnes)
-summary(slm)
+summary(multi_lm)
 ```
-###Plots
-```{r echo=FALSE, warning=FALSE}
-drawhist(slm,y_name)
-```
-```
-```
-```{r echo=FALSE, warning=FALSE}
-drawpp(slm,y_name)
-```
-```
-```
-```{r echo=FALSE, warning=FALSE}
-drawscatter(slm,y_vec,y_name)
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
 
-##Stepwise linear regression against selected IV's - dirction = forward 
-```{r echo=FALSE, warning=FALSE, comment=FALSE,cache=FALSE, results=FALSE}
-lm_step<-step(lm(yy~.,data=na.omit(selectedOnes)),direction="forward")
-```
-###Final Model Summary 
+<!-- ####Stepwise linear regression against selected IV's - dirction = forward -->
+<!-- ```{r echo=FALSE, warning=FALSE, comment=FALSE,cache=FALSE, results=FALSE} -->
+<!-- lm_step<-stepLm(xtable_food,y_vec,"forward") -->
+<!-- ``` -->
+<!-- ####Final Model Summary -->
+<!-- ```{r echo=FALSE, warning=FALSE} -->
+<!-- options(width = 300) -->
+<!-- summary(lm_step) -->
+<!-- ``` -->
+<!-- ####Same result - plots are same above -->
+
+
+<!-- # ```{r} -->
+<!-- # library(MASS) -->
+<!-- # makeBoxcox<-function(xdata,yvec){ -->
+<!-- #   x_vec<-selectingXs(xdata,yvec) -->
+<!-- #   selectedOnes<-createfinal(xdata,x_vec,yvec) -->
+<!-- #   boxcox(yy~.,data=selectedOnes);title(main="Box-cox Plot")  -->
+<!-- # } -->
+<!-- # new_y_vec = y_vec-min(y_vec)+1 -->
+<!-- # new_y_vec=new_y_vec^0.2 -->
+<!-- #  -->
+<!-- #  -->
+<!-- # multi_lm<-multiLm(xtable_food,new_y_vec,y_name) -->
+<!-- # options(width = 300) -->
+<!-- # summary(multi_lm) -->
+<!-- #  -->
+<!-- #  -->
+<!-- # lm_step<-stepLm(xtable_food,new_y_vec,"forward") -->
+<!-- # summary(lm_step) -->
+<!-- #  -->
+<!-- # makeBoxcox(xtable_food,new_y_vec) -->
+<!-- #  -->
+<!-- #  -->
+<!-- # min(y_vec) -->
+<!-- # data.table(cbind(y_vec,y_vec+1-min(y_vec))) -->
+<!-- # ``` -->
+<!-- #  -->
+
+
+<!-- ```{r practice} -->
+
+<!-- cat("<h4 color='red'>not selected X's</h4>") -->
+<!-- x_vec<-selectingXs(xtable_food,y_vec) -->
+
+<!-- if (length(which(!(c(1:length(colnames(xtable_food))) %in% x_vec)))>0){ -->
+<!--   print(colnames(xtable_food)[which(!(c(1:length(colnames(xtable_food))) %in% x_vec))]) -->
+<!-- }else{ -->
+<!--   print("None") -->
+<!-- } -->
+<!-- cat("<h4 color='red'>selected X's</h4>") -->
+<!-- print(colnames(xtable_food)[x_vec]) -->
+<!-- cat("<h4 color='red'>Linear regression against selected IV's</h4>") -->
+<!-- selectedOnes<-createfinal(xtable_food,x_vec,y_vec) -->
+<!-- slm<-lm(yy~.,data=selectedOnes) -->
+<!-- slm -->
+
+<!-- cat("<h5 color='red'>Plots</h5>") -->
+<!-- drawhist(slm,y_name) -->
+
+<!-- # par(mfrow=c(2,1)) -->
+<!--   qqnorm(rstandard(lm_step))  -->
+<!--   qqline(rstandard(lm_step)) -->
+<!--   tmp1 <- rstandard(zzz) -->
+<!--   tmp2 <- pnorm( tmp1, 0, summary(zzz)$sigma ) -->
+<!--   plot( ppoints(length(tmp1)),sort(tmp2), xlab="Theoretical Percentiles",ylab="Sample Percentiles",main=paste("Normal P-P Plot of Regression Standardized Residual\nDependent variable : ",yyy,sep="")) -->
+<!--   abline(0,1) -->
+
+<!-- qqnorm(rstandard(slm)) -->
+<!-- qqline(rstandard(slm)) -->
+<!-- drawpp(slm,y_name) -->
+<!-- drawscatter(slm,y_vec,y_name) -->
+<!-- qqplot(slm$res,y_vec) -->
+<!-- options(width = 100) -->
+
+<!-- colnames(dt) -->
+
+<!-- multi_lm<-multiLm(xtable_food,y_vec,y_name) -->
+<!-- qqplot(multi_lm$residuals,y_vec) -->
+<!-- y_vec -->
+<!-- multi_lm$residuals -->
+<!-- zcd<-xtable_food[,.(ZNeighborhood_Disadvantage_Index_3Vars_09_13,ZNeighborhood_Affluence_Index_2Vars_09_13,LOG10_fast_food_Density_2015,LOG10_Disability_Rates_09_13,LOG10_PCT_18_to_29_09_13,LOG10_twts_14_16)] -->
+
+
+<!-- zcd<-xtable_food[,.(ZNeighborhood_Affluence_Index_2Vars_09_13,LOG10_PCT_18_to_29_09_13,LOG10_twts_14_16)] -->
+<!-- multi_lm1<-multiLm(zcd,y_vec,y_name) -->
+<!-- summary(multi_lm1) -->
+
+<!-- plot(multi_lm$fit,multi_lm$res) -->
+<!-- plot(zcd$ZNeighborhood_Disadvantage_Index_3Vars_09_13,multi_lm$res) -->
+<!-- plot(zcd$ZNeighborhood_Affluence_Index_2Vars_09_13,multi_lm$res) -->
+<!-- plot(zcd$LOG10_fast_food_Density_2015,multi_lm$res) -->
+<!-- plot(zcd$LOG10_Disability_Rates_09_13,multi_lm$res) -->
+<!-- plot(zcd$LOG10_PCT_18_to_29_09_13,multi_lm$res) -->
+<!-- plot(zcd$LOG10_twts_14_16,multi_lm$res) -->
+
+<!-- summary(multi_lm) -->
+<!-- library(MASS) -->
+<!-- ee<-cbind(y_vec+2,xtable_food) -->
+<!-- boxcox(V1~.,data=ee);title(main="Box-cox Plot") -->
+
+<!-- hist(zcd$ZNeighborhood_Disadvantage_Index_3Vars_09_13) -->
+<!-- hist(zcd$ZNeighborhood_Affluence_Index_2Vars_09_13) -->
+<!-- hist(zcd$LOG10_fast_food_Density_2015) -->
+<!-- hist(zcd$LOG10_Disability_Rates_09_13) -->
+<!-- hist(zcd$LOG10_PCT_18_to_29_09_13) -->
+<!-- hist(zcd$LOG10_twts_14_16) -->
+
+
+<!-- summary(zz) -->
+<!-- multiPlots(zz,y_vec+2,y_name) -->
+<!-- ``` -->
+
+#score_healthy
+##Normalization A - by the number of food words 
+###NormA_tract_score_healthy
 ```{r echo=FALSE, warning=FALSE}
+thisY<-which(ys=="NormA_tract_score_healthy") #thisY follows the order of ys vector
+y_name<-ys[thisY]
+y_vec<-ytable[[y_name]]
+print(y_name)
+```
+
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multi_lm<-multiLm(xtable_food,y_vec,y_name)
+#this is to get rid of influential points -> grabbing only points within 95%
+thisRows<-as.vector(which(rstandard(multi_lm)>=-thisValue&rstandard(multi_lm)<=thisValue))
+#this is to see whether some rows are always outliers 
+logVector <- c(logVector,which(indexLookup %in% thisRows==FALSE))
+multi_lm<-multiLm(xtable_food[thisRows,],y_vec[thisRows],y_name,1)
+```
+```{r echo=FALSE}
 options(width = 300)
-summary(lm_step)
+summary(multi_lm)
 ```
-####Same result - plots are same above
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multiPlots(multi_lm,y_vec[thisRows],y_name)
+```
 
+###NormA_user_score_healthy
+```{r echo=FALSE, warning=FALSE}
+thisY<-which(ys=="NormA_user_score_healthy") #thisY follows the order of ys vector
+y_name<-ys[thisY]
+y_vec<-ytable[[y_name]]
+print(y_name)
+```
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multi_lm<-multiLm(xtable_food,y_vec,y_name)
+#this is to get rid of influential points -> grabbing only points within 95%
+thisRows<-as.vector(which(rstandard(multi_lm)>=-thisValue&rstandard(multi_lm)<=thisValue))
+#this is to see whether some rows are always outliers 
+logVector <- c(logVector,which(indexLookup %in% thisRows==FALSE))
+multi_lm<-multiLm(xtable_food[thisRows,],y_vec[thisRows],y_name,1)
+```
+```{r echo=FALSE}
+options(width = 300)
+summary(multi_lm)
+```
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multiPlots(multi_lm,y_vec[thisRows],y_name)
+```
 
+##Normalization B - by the number of tweets
+###NormB_tract_score_healthy
+```{r echo=FALSE, warning=FALSE}
+thisY<-which(ys=="NormB_tract_score_healthy") #thisY follows the order of ys vector
+y_name<-ys[thisY]
+y_vec<-ytable[[y_name]]
+print(y_name)
+```
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multi_lm<-multiLm(xtable_food,y_vec,y_name)
+#this is to get rid of influential points -> grabbing only points within 95%
+thisRows<-as.vector(which(rstandard(multi_lm)>=-thisValue&rstandard(multi_lm)<=thisValue))
+#this is to see whether some rows are always outliers 
+logVector <- c(logVector,which(indexLookup %in% thisRows==FALSE))
+multi_lm<-multiLm(xtable_food[thisRows,],y_vec[thisRows],y_name,1)
+```
+```{r echo=FALSE}
+options(width = 300)
+summary(multi_lm)
+```
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multiPlots(multi_lm,y_vec[thisRows],y_name)
+```
 
-#Linear regression - NormB_user_score_healthy
+###NormB_user_score_healthy
 ```{r echo=FALSE, warning=FALSE}
 thisY<-which(ys=="NormB_user_score_healthy") #thisY follows the order of ys vector
 y_name<-ys[thisY]
 y_vec<-ytable[[y_name]]
 print(y_name)
 ```
-##Simple Linear ression against each IV
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multi_lm<-multiLm(xtable_food,y_vec,y_name)
+#this is to get rid of influential points -> grabbing only points within 95%
+thisRows<-as.vector(which(rstandard(multi_lm)>=-thisValue&rstandard(multi_lm)<=thisValue))
+#this is to see whether some rows are always outliers 
+logVector <- c(logVector,which(indexLookup %in% thisRows==FALSE))
+multi_lm<-multiLm(xtable_food[thisRows,],y_vec[thisRows],y_name,1)
 ```
-ran simple linear regression against each IV 
-
-selected any IV's - p-value is less than 0.10
-
-```
-### all available X's
-```{r echo=FALSE, warning=FALSE}
-options(width = 100)
-print(colnames(xtable_food))
-```
-### not selected X's
-```{r echo=FALSE, warning=FALSE}
-options(width = 100)
-x_vec<-selectingXs(xtable_food,y_vec)
-print(colnames(xtable_food)[which(!(c(1:length(colnames(xtable_food))) %in% x_vec))])
-```
-### selected X's
-```{r echo=FALSE, warning=FALSE}
-options(width = 100)
-print(colnames(xtable_food)[x_vec])
-```
-
-##Linear regression against selected IV's 
-```{r echo=FALSE, warning=FALSE}
+```{r echo=FALSE}
 options(width = 300)
-selectedOnes<-createfinal(xtable_food,x_vec,y_vec)
-slm<-lm(yy~.,data=selectedOnes)
-summary(slm)
+summary(multi_lm)
 ```
-###Plots
-```{r echo=FALSE, warning=FALSE}
-drawhist(slm,y_name)
-```
-```
-```
-```{r echo=FALSE, warning=FALSE}
-drawpp(slm,y_name)
-```
-```
-```
-```{r echo=FALSE, warning=FALSE}
-drawscatter(slm,y_vec,y_name)
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
 
-##Stepwise linear regression against selected IV's - dirction = forward 
-```{r echo=FALSE, warning=FALSE, comment=FALSE,cache=FALSE, results=FALSE}
-lm_step<-step(lm(yy~.,data=na.omit(selectedOnes)),direction="forward")
-```
-###Final Model Summary 
+
+#score_unhealthy
+##Normalization A - by the number of food words 
+###NormA_tract_score_unhealthy
 ```{r echo=FALSE, warning=FALSE}
+thisY<-which(ys=="NormA_tract_score_unhealthy") #thisY follows the order of ys vector
+y_name<-ys[thisY]
+y_vec<-ytable[[y_name]]
+print(y_name)
+```
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multi_lm<-multiLm(xtable_food,y_vec,y_name)
+#this is to get rid of influential points -> grabbing only points within 95%
+thisRows<-as.vector(which(rstandard(multi_lm)>=-thisValue&rstandard(multi_lm)<=thisValue))
+#this is to see whether some rows are always outliers 
+logVector <- c(logVector,which(indexLookup %in% thisRows==FALSE))
+multi_lm<-multiLm(xtable_food[thisRows,],y_vec[thisRows],y_name,1)
+```
+```{r echo=FALSE}
 options(width = 300)
-summary(lm_step)
+summary(multi_lm)
 ```
-####Same result - plots are same above
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multiPlots(multi_lm,y_vec[thisRows],y_name)
+```
 
-#Linear regression - NormB_user_score_unhealthy
+###NormA_user_score_unhealthy
+```{r echo=FALSE, warning=FALSE}
+thisY<-which(ys=="NormA_user_score_unhealthy") #thisY follows the order of ys vector
+y_name<-ys[thisY]
+y_vec<-ytable[[y_name]]
+print(y_name)
+```
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multi_lm<-multiLm(xtable_food,y_vec,y_name)
+#this is to get rid of influential points -> grabbing only points within 95%
+thisRows<-as.vector(which(rstandard(multi_lm)>=-thisValue&rstandard(multi_lm)<=thisValue))
+#this is to see whether some rows are always outliers 
+logVector <- c(logVector,which(indexLookup %in% thisRows==FALSE))
+multi_lm<-multiLm(xtable_food[thisRows,],y_vec[thisRows],y_name,1)
+```
+```{r echo=FALSE}
+options(width = 300)
+summary(multi_lm)
+```
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multiPlots(multi_lm,y_vec[thisRows],y_name)
+```
+
+##Normalization B - by the number of tweets
+###NormB_tract_score_unhealthy
+```{r echo=FALSE, warning=FALSE}
+thisY<-which(ys=="NormB_tract_score_unhealthy") #thisY follows the order of ys vector
+y_name<-ys[thisY]
+y_vec<-ytable[[y_name]]
+print(y_name)
+```
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multi_lm<-multiLm(xtable_food,y_vec,y_name)
+#this is to get rid of influential points -> grabbing only points within 95%
+thisRows<-as.vector(which(rstandard(multi_lm)>=-thisValue&rstandard(multi_lm)<=thisValue))
+#this is to see whether some rows are always outliers 
+logVector <- c(logVector,which(indexLookup %in% thisRows==FALSE))
+multi_lm<-multiLm(xtable_food[thisRows,],y_vec[thisRows],y_name,1)
+```
+```{r echo=FALSE}
+options(width = 300)
+summary(multi_lm)
+```
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multiPlots(multi_lm,y_vec[thisRows],y_name)
+```
+
+###NormB_user_score_unhealthy
 ```{r echo=FALSE, warning=FALSE}
 thisY<-which(ys=="NormB_user_score_unhealthy") #thisY follows the order of ys vector
 y_name<-ys[thisY]
 y_vec<-ytable[[y_name]]
 print(y_name)
 ```
-##Simple Linear ression against each IV
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multi_lm<-multiLm(xtable_food,y_vec,y_name)
+#this is to get rid of influential points -> grabbing only points within 95%
+thisRows<-as.vector(which(rstandard(multi_lm)>=-thisValue&rstandard(multi_lm)<=thisValue))
+#this is to see whether some rows are always outliers 
+logVector <- c(logVector,which(indexLookup %in% thisRows==FALSE))
+multi_lm<-multiLm(xtable_food[thisRows,],y_vec[thisRows],y_name,1)
 ```
-ran simple linear regression against each IV 
-
-selected any IV's - p-value is less than 0.10
-
-```
-### all available X's
-```{r echo=FALSE, warning=FALSE}
-options(width = 100)
-print(colnames(xtable_food))
-```
-### not selected X's
-```{r echo=FALSE, warning=FALSE}
-options(width = 100)
-x_vec<-selectingXs(xtable_food,y_vec)
-print(colnames(xtable_food)[which(!(c(1:length(colnames(xtable_food))) %in% x_vec))])
-```
-### selected X's
-```{r echo=FALSE, warning=FALSE}
-options(width = 100)
-print(colnames(xtable_food)[x_vec])
-```
-
-##Linear regression against selected IV's 
-```{r echo=FALSE, warning=FALSE}
+```{r echo=FALSE}
 options(width = 300)
-selectedOnes<-createfinal(xtable_food,x_vec,y_vec)
-slm<-lm(yy~.,data=selectedOnes)
-summary(slm)
+summary(multi_lm)
 ```
-###Plots
-```{r echo=FALSE, warning=FALSE}
-drawhist(slm,y_name)
-```
-```
-```
-```{r echo=FALSE, warning=FALSE}
-drawpp(slm,y_name)
-```
-```
-```
-```{r echo=FALSE, warning=FALSE}
-drawscatter(slm,y_vec,y_name)
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
 
-##Stepwise linear regression against selected IV's - dirction = forward 
-```{r echo=FALSE, warning=FALSE, comment=FALSE,cache=FALSE, results=FALSE}
-lm_step<-step(lm(yy~.,data=na.omit(selectedOnes)),direction="forward")
-```
-###Final Model Summary 
+#num_alcohol_words
+###NormB_tract_num_alcohol_words
 ```{r echo=FALSE, warning=FALSE}
+thisY<-which(ys=="NormB_tract_num_alcohol_words") #thisY follows the order of ys vector
+y_name<-ys[thisY]
+y_vec<-ytable[[y_name]]
+print(y_name)
+```
+```{r echo=FALSE,warning=FALSE,results='asis'}
+#multi_lm<-multiLm(xtable_alc,y_vec,y_name)
+x_vec<-selectingXs(xtable_alc,y_vec)
+selectedOnes<-createfinal(xtable_alc,x_vec,y_vec)
+multi_lm<-lm(yy~.,data=selectedOnes)
+
+#this is to get rid of influential points -> grabbing only points within 95%
+thisRows<-as.vector(which(rstandard(multi_lm)>=-thisValue&rstandard(multi_lm)<=thisValue))
+#this is to see whether some rows are always outliers 
+logVector <- c(logVector,which(indexLookup %in% thisRows==FALSE))
+
+cat("<h4 color='red'>not selected X's : p-value > 0.15 </h4>")
+x_vec<-selectingXs(xtable_alc[thisRows,],y_vec[thisRows])
+options(width = 20)
+if (length(which(!(c(1:length(colnames(xtable_alc[thisRows,]))) %in% x_vec)))>0){
+  print(colnames(xtable_alc[thisRows,])[which(!(c(1:length(colnames(xtable_alc[thisRows,]))) %in% x_vec))])
+}else{
+  print("None")
+}
+  
+cat("<h4 color='red'>selected X's : p-value < 0.15</h4>")
+print(colnames(xtable_alc)[x_vec])
+cat("<h4 color='red'>Linear regression against selected X's</h4>")
+selectedOnes<-createfinal(xtable_alc[thisRows,],x_vec,y_vec[thisRows])
+multi_lm<-lm(yy~.,data=selectedOnes)
+
+```
+```{r echo=FALSE}
 options(width = 300)
-summary(lm_step)
+summary(multi_lm)
 ```
-####Same result - plots are same above
+####Correlations - selected X's
+```{r echo=FALSE,warning=FALSE}
+options(width = 300)
+corxy<- cor(selectedOnes)
+colnames(corxy)<-c("user_alchol","disadv","affl","reli","disabi","twts")
+rownames(corxy)<-c("user_alchol","disadv","affl","reli","disabi","twts")
+print(corxy)
+```
 
-#Linear regression - NormB_user_num_alcohol_words
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multiPlots(multi_lm,y_vec[thisRows],y_name)
+```
+
+
+###NormB_user_num_alcohol_words
 ```{r echo=FALSE, warning=FALSE}
 thisY<-which(ys=="NormB_user_num_alcohol_words") #thisY follows the order of ys vector
 y_name<-ys[thisY]
 y_vec<-ytable[[y_name]]
 print(y_name)
 ```
-##Simple Linear ression against each IV
-```
-ran simple linear regression against each IV 
-
-selected any IV's - p-value is less than 0.10
-
-```
-### all available X's
-```{r echo=FALSE, warning=FALSE}
-options(width = 100)
-print(colnames(xtable_alc))
-```
-### not selected X's
-```{r echo=FALSE, warning=FALSE}
-options(width = 100)
+```{r echo=FALSE,warning=FALSE,results='asis'}
+#multi_lm<-multiLm(xtable_alc,y_vec,y_name)
 x_vec<-selectingXs(xtable_alc,y_vec)
-print(colnames(xtable_alc)[which(!(c(1:length(colnames(xtable_alc))) %in% x_vec))])
-```
-### selected X's
-```{r echo=FALSE, warning=FALSE}
-options(width = 100)
-print(colnames(xtable_alc)[x_vec])
-```
-
-##Linear regression against selected IV's 
-```{r echo=FALSE, warning=FALSE}
-options(width = 300)
 selectedOnes<-createfinal(xtable_alc,x_vec,y_vec)
-slm<-lm(yy~.,data=selectedOnes)
-summary(slm)
-```
-###Plots
-```{r echo=FALSE, warning=FALSE}
-drawhist(slm,y_name)
-```
-```
-```
-```{r echo=FALSE, warning=FALSE}
-drawpp(slm,y_name)
-```
-```
-```
-```{r echo=FALSE, warning=FALSE}
-drawscatter(slm,y_vec,y_name)
-```
+multi_lm<-lm(yy~.,data=selectedOnes)
 
-##Stepwise linear regression against selected IV's - dirction = forward 
-```{r echo=FALSE, warning=FALSE, comment=FALSE,cache=FALSE, results=FALSE}
-lm_step<-step(lm(yy~.,data=na.omit(selectedOnes)),direction="forward")
+#this is to get rid of influential points -> grabbing only points within 95%
+thisRows<-as.vector(which(rstandard(multi_lm)>=-thisValue&rstandard(multi_lm)<=thisValue))
+#this is to see whether some rows are always outliers 
+logVector <- c(logVector,which(indexLookup %in% thisRows==FALSE))
+
+cat("<h4 color='red'>not selected X's : p-value > 0.15 </h4>")
+x_vec<-selectingXs(xtable_alc[thisRows,],y_vec[thisRows])
+options(width = 20)
+if (length(which(!(c(1:length(colnames(xtable_alc[thisRows,]))) %in% x_vec)))>0){
+  print(colnames(xtable_alc[thisRows,])[which(!(c(1:length(colnames(xtable_alc[thisRows,]))) %in% x_vec))])
+}else{
+  print("None")
+}
+  
+cat("<h4 color='red'>selected X's : p-value < 0.15</h4>")
+print(colnames(xtable_alc)[x_vec])
+cat("<h4 color='red'>Linear regression against selected X's</h4>")
+selectedOnes<-createfinal(xtable_alc[thisRows,],x_vec,y_vec[thisRows])
+multi_lm<-lm(yy~.,data=selectedOnes)
+
 ```
-###Final Model Summary 
-```{r echo=FALSE, warning=FALSE}
+```{r echo=FALSE}
 options(width = 300)
-summary(lm_step)
+summary(multi_lm)
 ```
-####Same result - plots are same above
+####Correlations - selected X's
+```{r echo=FALSE,warning=FALSE}
+options(width = 300)
+corxy<- cor(selectedOnes)
+colnames(corxy)<-c("user_alchol","disadv","affl","reli","liquor","disabi","twts")
+rownames(corxy)<-c("user_alchol","disadv","affl","reli","liquor","disabi","twts")
+print(corxy)
+```
+
+```{r echo=FALSE,warning=FALSE,results='asis'}
+multiPlots(multi_lm,y_vec[thisRows],y_name)
+```
+
+#Which rows have been dropped and how many times?
+```{r echo=FALSE,warning=FALSE}
+table(logVector)
+#print(dt[logVector[which(table(logVector)>=10)],])
+```
 
 
+<!-- #EDA of Independent Variables -->
+<!-- ```{r echo=FALSE,warning=FALSE} -->
+<!-- par(mfrow=c(1,2)) -->
+<!-- for (i in colnames(dt)[1:which(colnames(dt)=="GEOID10")-1]){ -->
+<!--   hist(dt[[i]],main="Histogram",xlab=i) -->
+<!-- } -->
+<!-- ``` -->
+
+<!-- #EDA of Dependent Variables -->
+<!-- ```{r echo=FALSE,warning=FALSE} -->
+<!-- par(mfrow=c(1,2)) -->
+<!-- for (i in colnames(dt)[which(colnames(dt)=="NormA_tract_score_healthy"):which(colnames(dt)=="NormB_user_num_alcohol_words")]){ -->
+<!--   hist(dt[[i]],main="Histogram",xlab=i) -->
+<!-- } -->
+<!-- ``` -->
 
 <!-- #Classification - predicting counties -->
 
@@ -859,9 +1052,9 @@ summary(lm_step)
 <!-- ``` -->
 
 <!-- ``` -->
-<!-- [min    to -0.2)    -->   -1 -->
-<!-- [-0.2   to  0.2]    -->    0 -->
-<!-- (0.2    to  max]    -->    1 -->
+<!-- [min    to -0.2)     -1 -->
+<!-- [-0.2   to  0.2]     0  -->
+<!-- (0.2    to  max]     1  -->
 <!-- ``` -->
 
 <!-- ```{r echo=FALSE, warning=FALSE} -->
