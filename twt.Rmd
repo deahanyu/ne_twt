@@ -18,6 +18,8 @@ library(randomForest)
 library(caret)
 library(remef)
 library(corrplot)
+library(GGally)
+library(faraway)
 ```
 
 ```{r test, echo=FALSE, warning=FALSE, comment=FALSE,results=FALSE}
@@ -35,6 +37,7 @@ lm<-lm(dat[,1]~dat[,2])
 # lm$coef
 # lm$model
 ```
+
 
 <!-- ```{r practiceTest} -->
 <!-- #selectingX part -->
@@ -54,8 +57,17 @@ lm<-lm(dat[,1]~dat[,2])
 <!-- #createFinal -->
 <!-- thisxtable<-xtable_food[,thisXs,with=FALSE] -->
 <!-- selectedOnes<-cbind(y_vec,thisxtable) -->
-<!-- slm<-lm(y_vec~ZNeighborhood_Affluence_Index_2Vars_09_13+LOG10_fast_food_Density_2015+ZNeighborhood_Disadvantage_Index_3Vars_09_13+LOG10_twts_14_16+LOG10_PCT_18_to_29_09_13,data=selectedOnes) -->
+<!-- slm<-lm(y_vec~ZNeighborhood_Affluence_Index_2Vars_09_13+LOG10_fast_food_Density_2015+ZNeighborhood_Disadvantage_Index_3Vars_09_13+LOG10_twts_14_16,data=selectedOnes) -->
 <!-- summary(slm) -->
+
+
+
+
+<!-- selectedOnes1<-selectedOnes -->
+
+<!-- colnames(selectedOnes1)<-creatingNewColumnNames(selectedOnes,y_name) -->
+<!-- pairs(selectedOnes1,lower.panel=panel_cor) -->
+
 <!-- ``` -->
 
 
@@ -70,7 +82,7 @@ dt<-dt[,-(which(colnames(dt)=="num_unique_users"):which(colnames(dt)=="net_healt
 for (i in colnames(dt)) {
   if (any(i==c("GEOID10","tract","CountyCode","CountyName","countyname","highbroadbandadoptionrate"))){
     dt[,i] <- as.factor(as.character(dt[[i]]))
-  } else if(length(grep("[.]",i))>0 || length(grep("Mortality",i))>0 || length(grep("Sentiment",i))>0 || length(grep("total_twts",i))>0||length(grep("recrecen",i))>0||length(grep("Grocery_Store_AvgDistance",i))>0 || length(grep("Voter_Turnout",i))>0||length(grep("Parkland",i))>0) {
+  } else if(length(grep("[.]",i))>0 || length(grep("Mortality",i))>0 || length(grep("Sentiment",i))>0 || length(grep("total_twts",i))>0||length(grep("recrecen",i))>0||length(grep("Grocery_Store_AvgDistance",i))>0 || length(grep("Voter_Turnout",i))>0||length(grep("Parkland",i))>0||length(grep("Disability",i))>0) {
     #deleting variables that has .1 or .2 at the end.  (duplicated ones)
      dt[[i]]<-NULL 
   }
@@ -139,7 +151,58 @@ prettyScatterplot<-function(ddff,x1,x1lab,y1,y1lab,x2,x2lab,y2,y2lab,ttitle){
   ggp3<- makeGgp(ddff,x2,x2lab,x1,x1lab,fMin,fMax)
   return(grid.arrange(ggp,ggp1,ggp2,ggp3, nrow=2,ncol=2,top = ttitle))
 }
+
+creatingNewColumnNames<-function(xxx,yname=1){
+  newNames<-c()
+  if (yname==1){
+    for (i in (colnames(xxx))){
+      split.pos <- gregexpr("_",i)[[1]]
+      split.length <- attr(split.pos, "match.length")
+      split.start <- c(1,sort(c(split.pos, split.pos+split.length)))
+      split.end <- c(split.start[-1]-1, nchar(i))
+      sp<-substring(i,split.start,split.end)
+      sp<-paste(sp[3],substring(sp[1],5,5),sp[7])
+      newNames<-c(newNames,sp)
+    }
+  }else{
+    for (i in colnames(xxx)){
+    if (i=="LOG10_PCT_18_to_29_09_13"){
+      newNames<-c(newNames,"PCT_Ages")
+    }
+    else {
+      split.pos <- gregexpr("_",i)[[1]]
+      split.length <- attr(split.pos, "match.length")
+      split.start <- sort(c(split.pos, split.pos+split.length))
+      split.end <- c(split.start[-1]-1, nchar(i))
+      sp<-substring(i,split.start,split.end)
+      newNames<-c(newNames,sp[2])
+    }
+    }
+  }
+  return(newNames)
+}
+
+panel_cor <- function(x, y, digits=2, prefix="", cex.cor){
+  usr <- par("usr"); on.exit(par(usr)) 
+  par(usr = c(0, 1, 0, 1)) 
+  r <- cor(x, y) 
+  txt <- format(c(r, 0.123456789), digits=digits)[1] 
+  txt <- paste(prefix, txt, sep="") 
+  if(missing(cex.cor)) cex<-2  #cex <- 0.8/strwidth(txt) 
+
+  test <- cor.test(x,y) 
+  # borrowed from printCoefmat
+  Signif <- symnum(test$p.value, corr = FALSE, na = FALSE, 
+                cutpoints = c(0, 0.001, 0.01, 0.05, 0.1, 1),
+                symbols = c("***", "**", "*", ".", " ")) 
+
+#text(0.5, 0.5, txt, cex = cex * abs(r)) 
+  text(0.5,0.5,txt,cex=cex)
+text(.8, .8, Signif, cex=cex, col=2) 
+}
+
 ```
+
 ```{r echo=FALSE,warning=FALSE}
 prettyScatterplot(dt,dt$NormB_tract_score_healthy,"NormB_tract_score_healthy",dt$NormA_tract_score_healthy,"NormA_tract_score_healthy",dt$NormB_user_score_healthy,"NormB_user_score_healthy",dt$NormA_user_score_healthy,"NormA_user_score_healthy","score_healthy")
 
@@ -154,6 +217,27 @@ pseudodt<- data.frame()
 ggp1<-ggplot(pseudodt) + geom_point() + xlim(0, 10) + ylim(0, 10)
 grid.arrange(ggp1, ggp, ncol=2,top="num_alcohol_words")
 ```
+
+#Pearson Correlation test between Norm A and Norm B
+```{r echo=FALSE,warning=FALSE}
+ys<-colnames(dt)[which(colnames(dt)=="NormA_tract_score_healthy"):ncol(dt)]
+ydt<-dt[,ys,with=FALSE]
+colnames(ydt)<-creatingNewColumnNames(ydt)
+k<-c()
+for (i in colnames(ydt)){
+  split.pos <- gregexpr(" ",i)[[1]]
+  split.length <- attr(split.pos, "match.length")
+  split.start <- c(1,sort(c(split.pos, split.pos+split.length)))
+  split.end <- c(split.start[-1]-1, nchar(i))
+  sp<-substring(i,split.start,split.end)
+  k<-c(k,sp[5])
+}
+for (j in c("score","healthy","unhealthy","alcohol")){
+   thiss<-which(k%in%j)
+   pairs(ydt[,thiss,with=FALSE],lower.panel=panel_cor)
+}
+```
+
 
 
 #Variables
@@ -189,24 +273,14 @@ xtable_alc$LOG10_fast_food_Density_2015<-NULL
 ```{r echo=FALSE}
 print(colnames(xtable_food))
 ```
-```
-Excluded variables:
-LOG10_PCT_21_to_29_09_13
-LOG10_Liquor_Density_2015
-LOG10_Religious_Density_2015
-```
+
 ###For alcohol related  y's
 ```{r echo=FALSE}
 print(colnames(xtable_alc))
 ```
-```
-Excluded variables:
-LOG10_PCT_18_to_29_09_13
-LOG10_fast_food_Density_2015
-```
+
 ##Dependent variables
 ```{r echo=FALSE,warning=FALSE}
-ys<-colnames(dt)[which(colnames(dt)=="NormA_tract_score_healthy"):ncol(dt)]
 ytable<-dt[,ys,with=FALSE]
 print(ys)
 ```
@@ -215,11 +289,28 @@ print(ys)
   Normalization B : divided by Food/Alcohol related tweets
 ```
 
+#Pearson Correlation test on each Y's
+```{r echo=FALSE,warning=FALSE}
+options(width = 300)
+xtable_food1<-xtable_food
+colnames(xtable_food1)<-creatingNewColumnNames(xtable_food1,0)
+xtable_alc1<-xtable_alc
+colnames(xtable_alc1)<-creatingNewColumnNames(xtable_alc1,0)
+for (i in 1:length(colnames(ydt))){
+  if(colnames(ydt)[i]=="tract B alcohol"||colnames(ydt)[i]=="user B alcohol"){
+    pairs(cbind(ydt[,i,with=FALSE],xtable_alc1),lower.panel=panel_cor)
+  }else{
+    pairs(cbind(ydt[,i,with=FALSE],xtable_food1),lower.panel=panel_cor)
+  }
+}
+```
+
 <!-- ##Summary Statistics  -->
 
 <!-- ```{r echo=FALSE,warning=FALSE} -->
 <!-- summary(xtable) -->
 <!-- ``` -->
+
 #Linear Regressions
 ```
 Steps that I did 
@@ -245,15 +336,15 @@ cat(paste0("4. Only 80% of census tracts with most tweets were used \n",paste0("
 ```
 
 ```
-For today's presentation,
-
-these steps below were used for each regression 
-
-Every Y's --> ran simple linear regression against each X 
+For each regression,
+          
+          --> ran simple linear regression against each X 
           --> only X's with p-value less than 0.15 was selected 
           --> ran multivariate linear regression 
           --> dropped any influential points (out of the 95% of data). 
           --> re-ran the regression
+          
+          --> VIF test - collinearity test 
 
 
 
@@ -329,8 +420,8 @@ multiLm<-function(xdata,yvec,yname,ques=0){
   if (ques==0){
     x_vec<-selectingXs(xdata,yvec)
     options(width = 20)
-    selectedOnes<-createfinal(xdata,x_vec,yvec)
-    slm<-lm(yy~.,data=selectedOnes)
+    sss<-createfinal(xdata,x_vec,yvec)
+    slm<-lm(yy~.,data=sss)
     
   } else{
   cat("<h4 color='red'>not selected X's : p-value > 0.15 </h4>")
@@ -344,11 +435,11 @@ multiLm<-function(xdata,yvec,yname,ques=0){
   cat("<h4 color='red'>selected X's : p-value < 0.15</h4>")
   print(colnames(xdata)[x_vec])
   cat("<h4 color='red'>Linear regression against selected X's</h4>")
-  selectedOnes<-createfinal(xdata,x_vec,yvec)
-  slm<-lm(yy~.,data=selectedOnes)
+  sss<-createfinal(xdata,x_vec,yvec)
+  slm<-lm(yy~.,data=sss)
   }
-  
   return(slm)
+
 }
 
 stepLm<-function(xdata,yvec,kk){
@@ -367,8 +458,9 @@ multiPlots<-function(slm,yvec,yname){
 
 ```
 
-#net_score
 
+
+#net_score
 ##Normalization A - by the number of food words 
 ###NormA_tract_net_score
 ```{r echo=FALSE, warning=FALSE}
@@ -377,6 +469,9 @@ y_name<-ys[thisY]
 y_vec<-ytable[[y_name]]
 print(y_name)
 ```
+
+
+
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 multi_lm<-multiLm(xtable_food,y_vec,y_name)
 #this is to get rid of influential points -> grabbing only points within 95%
@@ -385,10 +480,17 @@ thisRows<-as.vector(which(rstandard(multi_lm)>=-thisValue&rstandard(multi_lm)<=t
 logVector <- c(logVector,which(indexLookup %in% thisRows==FALSE))
 multi_lm<-multiLm(xtable_food[thisRows,],y_vec[thisRows],y_name,1)
 ```
+
 ```{r echo=FALSE}
 options(width = 300)
 summary(multi_lm)
 ```
+####VIF - Collinearity test 
+```{r echo=FALSE}
+options(width = 20)
+vif(multi_lm)
+```
+
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
@@ -401,7 +503,6 @@ y_vec<-ytable[[y_name]]
 print(y_name)
 ```
 
-
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 multi_lm<-multiLm(xtable_food,y_vec,y_name)
 #this is to get rid of influential points -> grabbing only points within 95%
@@ -410,10 +511,17 @@ thisRows<-as.vector(which(rstandard(multi_lm)>=-thisValue&rstandard(multi_lm)<=t
 logVector <- c(logVector,which(indexLookup %in% thisRows==FALSE))
 multi_lm<-multiLm(xtable_food[thisRows,],y_vec[thisRows],y_name,1)
 ```
+
 ```{r echo=FALSE}
 options(width = 300)
 summary(multi_lm)
 ```
+####VIF - Collinearity test 
+```{r echo=FALSE}
+options(width = 20)
+vif(multi_lm)
+```
+
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
@@ -426,6 +534,7 @@ y_name<-ys[thisY]
 y_vec<-ytable[[y_name]]
 print(y_name)
 ```
+
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 multi_lm<-multiLm(xtable_food,y_vec,y_name)
 #this is to get rid of influential points -> grabbing only points within 95%
@@ -434,14 +543,20 @@ thisRows<-as.vector(which(rstandard(multi_lm)>=-thisValue&rstandard(multi_lm)<=t
 logVector <- c(logVector,which(indexLookup %in% thisRows==FALSE))
 multi_lm<-multiLm(xtable_food[thisRows,],y_vec[thisRows],y_name,1)
 ```
+
 ```{r echo=FALSE}
 options(width = 300)
 summary(multi_lm)
 ```
+####VIF - Collinearity test 
+```{r echo=FALSE}
+options(width = 20)
+vif(multi_lm)
+```
+
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
-
 
 ###NormB_user_net_score
 ```{r echo=FALSE, warning=FALSE}
@@ -450,6 +565,7 @@ y_name<-ys[thisY]
 y_vec<-ytable[[y_name]]
 print(y_name)
 ```
+
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 multi_lm<-multiLm(xtable_food,y_vec,y_name)
 #this is to get rid of influential points -> grabbing only points within 95%
@@ -458,10 +574,17 @@ thisRows<-as.vector(which(rstandard(multi_lm)>=-thisValue&rstandard(multi_lm)<=t
 logVector <- c(logVector,which(indexLookup %in% thisRows==FALSE))
 multi_lm<-multiLm(xtable_food[thisRows,],y_vec[thisRows],y_name,1)
 ```
+
 ```{r echo=FALSE}
 options(width = 300)
 summary(multi_lm)
 ```
+####VIF - Collinearity test 
+```{r echo=FALSE}
+options(width = 20)
+vif(multi_lm)
+```
+
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
@@ -476,108 +599,6 @@ multiPlots(multi_lm,y_vec[thisRows],y_name)
 <!-- summary(lm_step) -->
 <!-- ``` -->
 <!-- ####Same result - plots are same above -->
-
-
-<!-- # ```{r} -->
-<!-- # library(MASS) -->
-<!-- # makeBoxcox<-function(xdata,yvec){ -->
-<!-- #   x_vec<-selectingXs(xdata,yvec) -->
-<!-- #   selectedOnes<-createfinal(xdata,x_vec,yvec) -->
-<!-- #   boxcox(yy~.,data=selectedOnes);title(main="Box-cox Plot")  -->
-<!-- # } -->
-<!-- # new_y_vec = y_vec-min(y_vec)+1 -->
-<!-- # new_y_vec=new_y_vec^0.2 -->
-<!-- #  -->
-<!-- #  -->
-<!-- # multi_lm<-multiLm(xtable_food,new_y_vec,y_name) -->
-<!-- # options(width = 300) -->
-<!-- # summary(multi_lm) -->
-<!-- #  -->
-<!-- #  -->
-<!-- # lm_step<-stepLm(xtable_food,new_y_vec,"forward") -->
-<!-- # summary(lm_step) -->
-<!-- #  -->
-<!-- # makeBoxcox(xtable_food,new_y_vec) -->
-<!-- #  -->
-<!-- #  -->
-<!-- # min(y_vec) -->
-<!-- # data.table(cbind(y_vec,y_vec+1-min(y_vec))) -->
-<!-- # ``` -->
-<!-- #  -->
-
-
-<!-- ```{r practice} -->
-
-<!-- cat("<h4 color='red'>not selected X's</h4>") -->
-<!-- x_vec<-selectingXs(xtable_food,y_vec) -->
-
-<!-- if (length(which(!(c(1:length(colnames(xtable_food))) %in% x_vec)))>0){ -->
-<!--   print(colnames(xtable_food)[which(!(c(1:length(colnames(xtable_food))) %in% x_vec))]) -->
-<!-- }else{ -->
-<!--   print("None") -->
-<!-- } -->
-<!-- cat("<h4 color='red'>selected X's</h4>") -->
-<!-- print(colnames(xtable_food)[x_vec]) -->
-<!-- cat("<h4 color='red'>Linear regression against selected IV's</h4>") -->
-<!-- selectedOnes<-createfinal(xtable_food,x_vec,y_vec) -->
-<!-- slm<-lm(yy~.,data=selectedOnes) -->
-<!-- slm -->
-
-<!-- cat("<h5 color='red'>Plots</h5>") -->
-<!-- drawhist(slm,y_name) -->
-
-<!-- # par(mfrow=c(2,1)) -->
-<!--   qqnorm(rstandard(lm_step))  -->
-<!--   qqline(rstandard(lm_step)) -->
-<!--   tmp1 <- rstandard(zzz) -->
-<!--   tmp2 <- pnorm( tmp1, 0, summary(zzz)$sigma ) -->
-<!--   plot( ppoints(length(tmp1)),sort(tmp2), xlab="Theoretical Percentiles",ylab="Sample Percentiles",main=paste("Normal P-P Plot of Regression Standardized Residual\nDependent variable : ",yyy,sep="")) -->
-<!--   abline(0,1) -->
-
-<!-- qqnorm(rstandard(slm)) -->
-<!-- qqline(rstandard(slm)) -->
-<!-- drawpp(slm,y_name) -->
-<!-- drawscatter(slm,y_vec,y_name) -->
-<!-- qqplot(slm$res,y_vec) -->
-<!-- options(width = 100) -->
-
-<!-- colnames(dt) -->
-
-<!-- multi_lm<-multiLm(xtable_food,y_vec,y_name) -->
-<!-- qqplot(multi_lm$residuals,y_vec) -->
-<!-- y_vec -->
-<!-- multi_lm$residuals -->
-<!-- zcd<-xtable_food[,.(ZNeighborhood_Disadvantage_Index_3Vars_09_13,ZNeighborhood_Affluence_Index_2Vars_09_13,LOG10_fast_food_Density_2015,LOG10_Disability_Rates_09_13,LOG10_PCT_18_to_29_09_13,LOG10_twts_14_16)] -->
-
-
-<!-- zcd<-xtable_food[,.(ZNeighborhood_Affluence_Index_2Vars_09_13,LOG10_PCT_18_to_29_09_13,LOG10_twts_14_16)] -->
-<!-- multi_lm1<-multiLm(zcd,y_vec,y_name) -->
-<!-- summary(multi_lm1) -->
-
-<!-- plot(multi_lm$fit,multi_lm$res) -->
-<!-- plot(zcd$ZNeighborhood_Disadvantage_Index_3Vars_09_13,multi_lm$res) -->
-<!-- plot(zcd$ZNeighborhood_Affluence_Index_2Vars_09_13,multi_lm$res) -->
-<!-- plot(zcd$LOG10_fast_food_Density_2015,multi_lm$res) -->
-<!-- plot(zcd$LOG10_Disability_Rates_09_13,multi_lm$res) -->
-<!-- plot(zcd$LOG10_PCT_18_to_29_09_13,multi_lm$res) -->
-<!-- plot(zcd$LOG10_twts_14_16,multi_lm$res) -->
-
-<!-- summary(multi_lm) -->
-<!-- library(MASS) -->
-<!-- ee<-cbind(y_vec+2,xtable_food) -->
-<!-- boxcox(V1~.,data=ee);title(main="Box-cox Plot") -->
-
-<!-- hist(zcd$ZNeighborhood_Disadvantage_Index_3Vars_09_13) -->
-<!-- hist(zcd$ZNeighborhood_Affluence_Index_2Vars_09_13) -->
-<!-- hist(zcd$LOG10_fast_food_Density_2015) -->
-<!-- hist(zcd$LOG10_Disability_Rates_09_13) -->
-<!-- hist(zcd$LOG10_PCT_18_to_29_09_13) -->
-<!-- hist(zcd$LOG10_twts_14_16) -->
-
-
-<!-- summary(zz) -->
-<!-- multiPlots(zz,y_vec+2,y_name) -->
-<!-- ``` -->
 
 #score_healthy
 ##Normalization A - by the number of food words 
@@ -600,6 +621,11 @@ multi_lm<-multiLm(xtable_food[thisRows,],y_vec[thisRows],y_name,1)
 ```{r echo=FALSE}
 options(width = 300)
 summary(multi_lm)
+```
+####VIF - Collinearity test 
+```{r echo=FALSE}
+options(width = 20)
+vif(multi_lm)
 ```
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 multiPlots(multi_lm,y_vec[thisRows],y_name)
@@ -624,6 +650,21 @@ multi_lm<-multiLm(xtable_food[thisRows,],y_vec[thisRows],y_name,1)
 options(width = 300)
 summary(multi_lm)
 ```
+####VIF - Collinearity test 
+```{r echo=FALSE}
+options(width = 20)
+vif(multi_lm)
+```
+
+```{r echo=FALSE,warning=FALSE}
+zzz<-selectingXs(xtable_food[thisRows,],y_vec[thisRows])
+sss<-createfinal(xtable_food[thisRows,],zzz,y_vec[thisRows])
+multi_lm<-lm(yy~.,data=sss)
+for (i in colnames(xtable_food[thisRows,])){
+  plot(xtable_food[thisRows,][[i]],rstandard(multi_lm),main=paste0("Residual vs. ",i),xlab=i,ylab="standardized residual")
+}
+```
+
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
@@ -648,6 +689,11 @@ multi_lm<-multiLm(xtable_food[thisRows,],y_vec[thisRows],y_name,1)
 options(width = 300)
 summary(multi_lm)
 ```
+####VIF - Collinearity test 
+```{r echo=FALSE}
+options(width = 20)
+vif(multi_lm)
+```
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
@@ -670,6 +716,19 @@ multi_lm<-multiLm(xtable_food[thisRows,],y_vec[thisRows],y_name,1)
 ```{r echo=FALSE}
 options(width = 300)
 summary(multi_lm)
+```
+####VIF - Collinearity test 
+```{r echo=FALSE}
+options(width = 20)
+vif(multi_lm)
+```
+```{r echo=FALSE,warning=FALSE}
+zzz<-selectingXs(xtable_food[thisRows,],y_vec[thisRows])
+sss<-createfinal(xtable_food[thisRows,],zzz,y_vec[thisRows])
+multi_lm<-lm(yy~.,data=sss)
+for (i in colnames(xtable_food[thisRows,])){
+  plot(xtable_food[thisRows,][[i]],rstandard(multi_lm),main=paste0("Residual vs. ",i),xlab=i,ylab="standardized residual")
+}
 ```
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 multiPlots(multi_lm,y_vec[thisRows],y_name)
@@ -697,6 +756,11 @@ multi_lm<-multiLm(xtable_food[thisRows,],y_vec[thisRows],y_name,1)
 options(width = 300)
 summary(multi_lm)
 ```
+####VIF - Collinearity test 
+```{r echo=FALSE}
+options(width = 20)
+vif(multi_lm)
+```
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
@@ -716,9 +780,15 @@ thisRows<-as.vector(which(rstandard(multi_lm)>=-thisValue&rstandard(multi_lm)<=t
 logVector <- c(logVector,which(indexLookup %in% thisRows==FALSE))
 multi_lm<-multiLm(xtable_food[thisRows,],y_vec[thisRows],y_name,1)
 ```
+
 ```{r echo=FALSE}
 options(width = 300)
 summary(multi_lm)
+```
+####VIF - Collinearity test 
+```{r echo=FALSE}
+options(width = 20)
+vif(multi_lm)
 ```
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 multiPlots(multi_lm,y_vec[thisRows],y_name)
@@ -744,6 +814,11 @@ multi_lm<-multiLm(xtable_food[thisRows,],y_vec[thisRows],y_name,1)
 options(width = 300)
 summary(multi_lm)
 ```
+####VIF - Collinearity test 
+```{r echo=FALSE}
+options(width = 20)
+vif(multi_lm)
+```
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
@@ -766,6 +841,11 @@ multi_lm<-multiLm(xtable_food[thisRows,],y_vec[thisRows],y_name,1)
 ```{r echo=FALSE}
 options(width = 300)
 summary(multi_lm)
+```
+####VIF - Collinearity test 
+```{r echo=FALSE}
+options(width = 20)
+vif(multi_lm)
 ```
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 multiPlots(multi_lm,y_vec[thisRows],y_name)
@@ -806,18 +886,24 @@ selectedOnes<-createfinal(xtable_alc[thisRows,],x_vec,y_vec[thisRows])
 multi_lm<-lm(yy~.,data=selectedOnes)
 
 ```
+
 ```{r echo=FALSE}
 options(width = 300)
 summary(multi_lm)
 ```
-####Correlations - selected X's
-```{r echo=FALSE,warning=FALSE}
-options(width = 300)
-corxy<- cor(selectedOnes)
-colnames(corxy)<-c("user_alchol","disadv","affl","reli","disabi","twts")
-rownames(corxy)<-c("user_alchol","disadv","affl","reli","disabi","twts")
-print(corxy)
+####VIF - Collinearity test 
+```{r echo=FALSE}
+options(width = 20)
+vif(multi_lm)
 ```
+<!-- ####Correlations - selected X's -->
+<!-- ```{r echo=FALSE,warning=FALSE} -->
+<!-- options(width = 300) -->
+<!-- corxy<- cor(selectedOnes) -->
+<!-- colnames(corxy)<-c("user_alchol","disadv","affl","reli","disabi","twts") -->
+<!-- rownames(corxy)<-c("user_alchol","disadv","affl","reli","disabi","twts") -->
+<!-- print(corxy) -->
+<!-- ``` -->
 
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 multiPlots(multi_lm,y_vec[thisRows],y_name)
@@ -862,14 +948,19 @@ multi_lm<-lm(yy~.,data=selectedOnes)
 options(width = 300)
 summary(multi_lm)
 ```
-####Correlations - selected X's
-```{r echo=FALSE,warning=FALSE}
-options(width = 300)
-corxy<- cor(selectedOnes)
-colnames(corxy)<-c("user_alchol","disadv","affl","reli","liquor","disabi","twts")
-rownames(corxy)<-c("user_alchol","disadv","affl","reli","liquor","disabi","twts")
-print(corxy)
+####VIF - Collinearity test 
+```{r echo=FALSE}
+options(width = 20)
+vif(multi_lm)
 ```
+<!-- ####Correlations - selected X's -->
+<!-- ```{r echo=FALSE,warning=FALSE} -->
+<!-- options(width = 300) -->
+<!-- corxy<- cor(selectedOnes) -->
+<!-- colnames(corxy)<-c("user_alchol","disadv","affl","reli","liquor","disabi","twts") -->
+<!-- rownames(corxy)<-c("user_alchol","disadv","affl","reli","liquor","disabi","twts") -->
+<!-- print(corxy) -->
+<!-- ``` -->
 
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 multiPlots(multi_lm,y_vec[thisRows],y_name)
@@ -877,198 +968,15 @@ multiPlots(multi_lm,y_vec[thisRows],y_name)
 
 #Which rows have been dropped and how many times?
 ```{r echo=FALSE,warning=FALSE}
-table(logVector)
+bb<-c()
+cc<-c()
+
+for (i in 1:length(table(as.vector(dt[logVector,]$GEOID10)))){
+  bb<-c(bb,names(table(as.vector(dt[logVector,]$GEOID10))[i]))
+  cc<-c(cc,table(as.vector(dt[logVector,]$GEOID10))[i][[1]])
+}
+
+write.csv(data.table(cbind(bb,cc)),file="tt.txt")
+
 #print(dt[logVector[which(table(logVector)>=10)],])
 ```
-
-
-<!-- #EDA of Independent Variables -->
-<!-- ```{r echo=FALSE,warning=FALSE} -->
-<!-- par(mfrow=c(1,2)) -->
-<!-- for (i in colnames(dt)[1:which(colnames(dt)=="GEOID10")-1]){ -->
-<!--   hist(dt[[i]],main="Histogram",xlab=i) -->
-<!-- } -->
-<!-- ``` -->
-
-<!-- #EDA of Dependent Variables -->
-<!-- ```{r echo=FALSE,warning=FALSE} -->
-<!-- par(mfrow=c(1,2)) -->
-<!-- for (i in colnames(dt)[which(colnames(dt)=="NormA_tract_score_healthy"):which(colnames(dt)=="NormB_user_num_alcohol_words")]){ -->
-<!--   hist(dt[[i]],main="Histogram",xlab=i) -->
-<!-- } -->
-<!-- ``` -->
-
-<!-- #Classification - predicting counties -->
-
-<!-- ##Random Forests  -->
-
-<!-- ###Creating a "true" test set -->
-<!-- ``` -->
-<!--                 80%           20% -->
-<!-- County       class80       class_true       <-how I called -->
-<!-- Data         data80        data_true        <-how I called -->
-
-<!-- ``` -->
-<!-- ```{r echo=FALSE, warning=FALSE} -->
-<!-- set.seed(1) -->
-<!-- # newxtable<-na.omit(xtable) -->
-<!-- counties<-dt$countyname -->
-<!-- countyNames<-unique(counties) -->
-<!-- county_numeric<-seq(1,length(counties)) -->
-<!-- thisCode <- 1  -->
-<!-- for ( i in countyNames) { -->
-<!--   if ( i== "."){ -->
-<!--     county_numeric[which(counties == i)]<-NA -->
-<!--   } -->
-<!--   else{ -->
-<!--     county_numeric[which(counties == i)]<-thisCode -->
-<!--   thisCode <- thisCode+1  -->
-<!--    } -->
-<!-- } -->
-
-<!-- class_dt<-cbind(county_numeric,xtable) -->
-<!-- K <- 5 -->
-<!-- n <- nrow(class_dt) -->
-<!-- fold_assignments <- rep(1:K,length=n) -->
-<!-- fold_assignments <- sample(fold_assignments) -->
-<!-- myRandomNumber <- 5 -->
-<!-- inds <- which(fold_assignments==myRandomNumber) -->
-
-<!-- data_true <- as.matrix(class_dt[inds]) -->
-<!-- data80 <- as.matrix(class_dt[-inds]) -->
-
-<!-- dataColumnNames <- colnames(data80) -->
-<!-- classColumn <- 1 -->
-<!-- cols = c(1:ncol(data80)) -->
-<!-- data_true <- sapply(cols, function(x) as.numeric(as.character(data_true[,x]))) -->
-<!-- data80 <- sapply(cols, function(x) as.numeric(as.character(data80[,x]))) -->
-<!-- ``` -->
-
-<!-- ##1. Variable Screening -->
-<!-- ```{r warning=FALSE} -->
-<!-- dataCol <- function(ddff,cutoffs,classNum){ -->
-<!--   cor_train<-cor(ddff) -->
-<!--   inds<-which(abs(as.vector(cor_train[classNum,]))>cutoffs) -->
-<!--   newdata80<-ddff[,inds] -->
-<!--   return(newdata80) -->
-<!-- } -->
-<!-- dataCol_for_test <-function(test,ddff,cutoffs,classNum){ -->
-<!--   cor_train<-cor(ddff) -->
-<!--   inds<-which(abs(as.vector(cor_train[classNum,]))>cutoffs) -->
-<!--   newtest<-test[,inds] -->
-<!--   return(newtest) -->
-<!-- } -->
-<!-- nfoldsRf <- function(ddff,ccc,nfolds,seeed,classNum){ -->
-<!--   #ddff, nfolds,seed -->
-<!--   newddff<-dataCol(ddff,ccc,classNum) -->
-<!--   set.seed(seeed) -->
-<!--   K <- nfolds -->
-<!--   n <- nrow(newddff) -->
-<!--   fold_assignments <- rep(1:K,length=n) -->
-<!--   fold_assignments <- sample(fold_assignments) -->
-<!--   list_rf_county<-NULL -->
-
-<!--   for( k in 1:K) { -->
-<!--     test <- which(fold_assignments==k) -->
-<!--     fold_train <- newddff[-test,] -->
-<!--     fold_test <- newddff[test,] -->
-
-<!--     rf_county<-randomForest(x=as.matrix(fold_train[,-classNum]),y=as.factor(fold_train[,classNum]),xtest=as.matrix(fold_test[,-classNum]),ytest=as.factor(fold_test[,classNum]),keep.forest=TRUE)   -->
-<!--     list_rf_county[[k]]<-rf_county -->
-<!--   } -->
-<!--   return(list_rf_county) -->
-<!-- } -->
-
-<!-- # #--1--No removing  -->
-<!-- # cutoff_list<-c(0,0.1,0.18,0.19,0.20,0.21,0.40) -->
-<!-- #--2--removing log, Z, variables -->
-<!-- cutoff_list<-c(0,0.1,0.14,0.15,0.16,0.17,0.18) -->
-<!-- # #--3--removing original variables -->
-<!-- # cutoff_list<-c(0,0.1,0.15,0.17,0.19,0.22,0.25) -->
-
-<!-- rf1<-nfoldsRf(data80,cutoff_list[1],5,1,classColumn) -->
-<!-- rf2<-nfoldsRf(data80,cutoff_list[2],5,1,classColumn) -->
-<!-- rf3<-nfoldsRf(data80,cutoff_list[3],5,1,classColumn) -->
-<!-- rf4<-nfoldsRf(data80,cutoff_list[4],5,1,classColumn) -->
-<!-- rf5<-nfoldsRf(data80,cutoff_list[5],5,1,classColumn) -->
-<!-- rf6<-nfoldsRf(data80,cutoff_list[6],5,1,classColumn) -->
-<!-- rf7<-nfoldsRf(data80,cutoff_list[7],5,1,classColumn) -->
-<!-- ``` -->
-<!-- ```{r echo=FALSE,warning=FALSE} -->
-<!-- big_list<-list(rf1,rf2,rf3,rf4,rf5,rf6,rf6,rf7) -->
-
-<!-- cor_train<-cor(data80) -->
-<!-- print("Number of variables      A cutoff point      Out-Of-Bag estimate of error rate") -->
-<!-- store_cutoffs<-c() -->
-<!-- store_oob<-c() -->
-
-<!-- for (i in 1:7){ -->
-<!--   rr<-big_list[[i]] -->
-<!--   cc<-c() -->
-<!--   for (j in 1:5){ -->
-<!--     cc<-c(cc,colMeans(rr[[j]]$err.rate)[1]) -->
-<!--   } -->
-<!--   thisVariable<-length(which(abs(as.vector(cor_train[1,]))>cutoff_list[i])) -->
-<!--   thisCutoff<-cutoff_list[i] -->
-<!--   thisMean<-mean(cc) -->
-<!--   print(paste(thisVariable,paste(thisCutoff,thisMean,sep="      "),sep="      ")) -->
-<!--   store_cutoffs<-c(store_cutoffs,thisCutoff) -->
-<!--   store_oob<-c(store_oob,thisMean) -->
-<!-- } -->
-<!-- selectedCutoff<-store_cutoffs[which.min(store_oob)] -->
-<!-- ``` -->
-
-<!-- ```{r echo=FALSE,warning=FALSE} -->
-<!-- print(paste0("Cutoff point: ",paste0(selectedCutoff," has been chosen"))) -->
-<!-- ``` -->
-
-<!-- ##2. Runnning a model & 30 most import variables -->
-<!-- ```{r warning=FALSE,fig.width=16,fig.height=10} -->
-<!-- train <- dataCol(data80,selectedCutoff,classColumn) -->
-<!-- test <- dataCol_for_test(data_true,data80,selectedCutoff,classColumn) -->
-<!-- rf<-randomForest(x=train[,-1],y=as.factor(train[,1]),keep.forest=TRUE)  -->
-<!-- pred_rf<-predict(rf,newdata=test[,-1],predict.all=T) -->
-<!-- thisLabel<-rev(dataColumnNames[rev(order(rf$importance))][1:30]) -->
-<!-- varImpPlot(rf,labels=thisLabel) -->
-<!-- ``` -->
-
-<!-- ##3. Final test -->
-<!-- ``` -->
-<!-- Genesee      Lapeer      Lenawee     Livingston     Macomb  -->
-<!-- 26049        26087       26091       26093          26099 -->
-
-<!-- Monroe       Oakland     St. Clair   Washtenaw      Wayne -->
-<!-- 26115        26125       26147       26161          26163 -->
-<!-- ``` -->
-<!-- ```{r echo=FALSE, warning=FALSE} -->
-<!-- confusionMatrix(pred_rf[[1]],test[,1]) -->
-<!-- ``` -->
-
-
-<!-- #Multinomial Logistic regression -Unhealthy, Neutral, Healthy --> -->
-<!-- ##How did I create the values from NormA_tract_net_score? -->
-<!-- ```{r echo=FALSE, warning=FALSE} -->
-<!-- hist(dt$NormA_tract_net_score) -->
-<!-- ``` -->
-
-<!-- ``` -->
-<!-- [min    to -0.2)     -1 -->
-<!-- [-0.2   to  0.2]     0  -->
-<!-- (0.2    to  max]     1  -->
-<!-- ``` -->
-
-<!-- ```{r echo=FALSE, warning=FALSE} -->
-<!-- dt[["logit"]]<-0 -->
-<!-- for (i in 1:nrow(dt)){ -->
-<!--   if (!(is.na(dt$NormA_tract_net_score[i]))) { -->
-<!--     if(dt$NormA_tract_net_score[i]< (-0.1)){ -->
-<!--     dt$logit[i]<- -1 -->
-<!--   } else if (dt$NormA_tract_net_score[i]>(0.1)) { -->
-<!--     dt$logit[i] <- 1 -->
-<!--   } -->
-<!--   } -->
-<!-- } -->
-<!-- dt$logit <- as.factor(dt$logit) -->
-<!-- table(dt$logit) -->
-<!-- ``` -->
-
