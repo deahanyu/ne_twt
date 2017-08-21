@@ -101,14 +101,14 @@ lm<-lm(dat[,1]~dat[,2])
 
 ```{r dataprep, echo=FALSE, warning=FALSE} 
 ## - - -  Uploading Data
-dt <- data.table(read.csv(Sys.glob('output/*.csv'),header = TRUE, sep = ','))
+dt <- data.table(read.csv(Sys.glob('data/*2.csv'),header = TRUE, sep = ','))
 dt<-dt[,-(which(colnames(dt)=="num_healthy1"):which(colnames(dt)=="net_score"))]
 dt<-dt[,-(which(colnames(dt)=="num_unique_users"):which(colnames(dt)=="net_healthy_unhealthy_related_tweets"))]
 
 for (i in colnames(dt)) {
   if (any(i==c("GEOID10","tract","CountyCode","CountyName","countyname","highbroadbandadoptionrate"))){
     dt[,i] <- as.factor(as.character(dt[[i]]))
-  } else if(length(grep("[.]",i))>0 || length(grep("Mortality",i))>0 || length(grep("Sentiment",i))>0 || length(grep("total_twts",i))>0||length(grep("recrecen",i))>0||length(grep("Grocery_Store_AvgDistance",i))>0 || length(grep("Voter_Turnout",i))>0||length(grep("Parkland",i))>0||length(grep("Disability",i))>0) {
+  } else if(length(grep("[.]1",i))>0 || length(grep("Mortality",i))>0 || length(grep("Sentiment",i))>0 || length(grep("total_twts",i))>0||length(grep("recrecen",i))>0||length(grep("Grocery_Store_AvgDistance",i))>0 || length(grep("Voter_Turnout",i))>0||length(grep("Parkland",i))>0||length(grep("Disability",i))>0) {
     #deleting variables that has .1 or .2 at the end.  (duplicated ones)
      dt[[i]]<-NULL 
   }
@@ -128,7 +128,14 @@ for (j in maxNum:1){
   }
 }
 #IV's end after "GEOID"
-IVnumbers<-which(colnames(dt)=="GEOID10")-1
+temp<-dt$GEOID10
+dt$GEOID10<-NULL
+dt$GEOID10<-temp
+dt$LOG10_PCT_21_to_29_09_13<-NULL
+dt$LOG10_PCT_18_to_29_09_13<-NULL
+dt$ZNeighborhood_Affluence_Index_2Vars_09_13<-NULL
+dt$ZNeighborhood_Disadvantage_Index_3Vars_09_13<-NULL
+IVnumbers<-which(colnames(dt)=="countyname")-1
 
 
 ```
@@ -193,17 +200,14 @@ creatingNewColumnNames<-function(xxx,yname=1){
     }
   }else{
     for (i in colnames(xxx)){
-    if (i=="LOG10_PCT_18_to_29_09_13"){
-      newNames<-c(newNames,"PCT_Ages")
-    }
-    else {
+    
       split.pos <- gregexpr("_",i)[[1]]
       split.length <- attr(split.pos, "match.length")
       split.start <- sort(c(split.pos, split.pos+split.length))
       split.end <- c(split.start[-1]-1, nchar(i))
       sp<-substring(i,split.start,split.end)
-      newNames<-c(newNames,sp[2])
-    }
+      newNames<-c(newNames,paste0(sp[2],sp[4]))
+    
     }
   }
   return(newNames)
@@ -280,7 +284,6 @@ grid.arrange(ggp1, ggp, ncol=2,top="num_alcohol_words")
 ##Independent variables
 ```{r echo=FALSE, warning=FALSE}
 #preserving only 80% of data with most twts
-
 dt<-dt[rev(order(num_tweets))][1:round(nrow(dt)*0.8),]
 howmanyzz<-nrow(dt)
 dt<-na.omit(dt)
@@ -291,19 +294,35 @@ logVector<-c()
 includeAll<-0#0 for including all points, 1 for removing outliers
 dropSome<-1
 
+
+
+
+newcoldt<-c()
 coldt<-colnames(dt)
 for(i in coldt){
   if(length(grep("LOG10_.*",i)==1)){
     dt[[i]]<-scale(dt[[i]],center=TRUE,scale=TRUE)
+    i <- paste0("Z",i)
   }
-}
-newcoldt<-c()
-for(i in coldt){
-  if(length(grep("LOG10_.*",i)==1)){
+  else if(length(grep("Log_*",i)==1)){
+    dt[[i]]<-scale(dt[[i]],center=TRUE,scale=TRUE)
+    i <- paste0("Z",i)
+  }
+  else if(length(grep("PCT_*",i)==1)){
+    dt[[i]]<-scale(dt[[i]],center=TRUE,scale=TRUE)
+    i <- paste0("Z",i)
+  }
+  else if(length(grep("Pct_*",i)==1)){
+    dt[[i]]<-scale(dt[[i]],center=TRUE,scale=TRUE)
+    i <- paste0("Z",i)
+  }
+  else if(length(grep("X2015_*",i)==1)){
+    dt[[i]]<-scale(dt[[i]],center=TRUE,scale=TRUE)
     i <- paste0("Z",i)
   }
   newcoldt <- c(newcoldt,i)
 }
+
 colnames(dt)<-newcoldt
 
 
@@ -313,17 +332,26 @@ xtable<-cbind(dt[,1:IVnumbers],Z_LOG10_twts_14_16)
 xtable[["ZLOG10_twts_14_16"]]<-xtable[["V1"]]
 xtable[["V1"]]<-NULL
 #--For Food
-#removing "LOG10_PCT_21_to_29_09_13", "LOG10_Liquor_Density_2015","LOG10_Religious_Density_2015"
+#removing some variables
 xtable_food<-xtable
-xtable_food$ZLOG10_PCT_21_to_29_09_13<-NULL
+xtable_food$ZPCT_age21_29<-NULL
 xtable_food$ZLOG10_Liquor_Density_2015<-NULL
 xtable_food$ZLOG10_Religious_Density_2015<-NULL
+xtable_food$ZLog_Pct_HhIncome_Civilian_Pop_Over75K<-NULL
+xtable_food$ZLog_Pct_Educ_25to64yrs_Higher_than_Associate_Est<-NULL
+xtable_food$ZPct_LvgSSI_Est_Past12m<-NULL
+xtable_food$ZPct_PovStatus_BelowPovLvl_Est.<-NULL
+xtable_food$ZLog_Pct_Race_Black_2001_Est<-NULL
 
 #--For alcohol
-#removing "LOG10_PCT_18_to_29_09_13","LOG10_fast_food_Density_2015"
+#removing some variables
 xtable_alc<-xtable
-xtable_alc$ZLOG10_PCT_18_to_29_09_13<-NULL
+xtable_alc$ZPCT_age18_29<-NULL
 xtable_alc$ZLOG10_fast_food_Density_2015<-NULL
+xtable_alc$ZX2015_advantage_income_edu<-NULL
+xtable_alc$ZX2015_disadvantage_SSI_pov_black<-NULL
+xtable_alc$ZX2015_disadvantage_SSI_pov<-NULL
+
 ```
 ###For food related y's
 ```{r echo=FALSE}
@@ -337,7 +365,7 @@ print(colnames(xtable_alc))
 
 ##Dependent variables
 ```{r echo=FALSE,warning=FALSE}
-ys<-colnames(dt)[which(colnames(dt)=="NormA_tract_score_healthy"):ncol(dt)]
+ys<-colnames(dt)[which(colnames(dt)=="NormA_tract_score_healthy"):which(colnames(dt)=="NormB_user_num_alcohol_words")]
 ytable<-dt[,ys,with=FALSE]
 print(ys)
 ```
@@ -366,7 +394,7 @@ colnames(xtable_food1)<-creatingNewColumnNames(xtable_food1,0)
 xtable_alc1<-xtable_alc
 colnames(xtable_alc1)<-creatingNewColumnNames(xtable_alc1,0)
 for (i in 1:length(colnames(ytable))){
-  if(colnames(ytable)[i]=="tract B alcohol"||colnames(ytable)[i]=="user B alcohol"){
+  if(colnames(ytable)[i]=="NormB_tract_num_alcohol_words"||colnames(ytable)[i]=="NormB_user_num_alcohol_words"){
     pairs(cbind(ytable[,i,with=FALSE],xtable_alc1),lower.panel=panel_cor)
   }else{
     pairs(cbind(ytable[,i,with=FALSE],xtable_food1),lower.panel=panel_cor)
@@ -568,7 +596,7 @@ vif(multi_lm)
 multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
 
-###Dropping "potential" points
+###Dropping influential points
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 findMeLine253<-1
 multi_lm<-removingInflunentialPoints(xtable_food,y_vec,y_name,thisValue,dropSome)
@@ -616,7 +644,7 @@ vif(multi_lm)
 multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
 
-###Dropping "potential" points
+###Dropping influential points
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 findMeLine253<-1
 multi_lm<-removingInflunentialPoints(xtable_food,y_vec,y_name,thisValue,dropSome)
@@ -665,7 +693,7 @@ vif(multi_lm)
 multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
 
-###Dropping "potential" points
+###Dropping influential points
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 findMeLine253<-1
 multi_lm<-removingInflunentialPoints(xtable_food,y_vec,y_name,thisValue,dropSome)
@@ -713,7 +741,7 @@ vif(multi_lm)
 multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
 
-###Dropping "potential" points
+###Dropping influential points
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 findMeLine253<-1
 multi_lm<-removingInflunentialPoints(xtable_food,y_vec,y_name,thisValue,dropSome)
@@ -774,7 +802,7 @@ vif(multi_lm)
 multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
 
-###Dropping "potential" points
+###Dropping influential points
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 findMeLine253<-1
 multi_lm<-removingInflunentialPoints(xtable_food,y_vec,y_name,thisValue,dropSome)
@@ -822,7 +850,7 @@ vif(multi_lm)
 multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
 
-###Dropping "potential" points
+###Dropping influential points
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 findMeLine253<-1
 multi_lm<-removingInflunentialPoints(xtable_food,y_vec,y_name,thisValue,dropSome)
@@ -885,7 +913,7 @@ vif(multi_lm)
 multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
 
-###Dropping "potential" points
+###Dropping influential points
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 findMeLine253<-1
 multi_lm<-removingInflunentialPoints(xtable_food,y_vec,y_name,thisValue,dropSome)
@@ -933,7 +961,7 @@ vif(multi_lm)
 multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
 
-###Dropping "potential" points
+###Dropping influential points
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 findMeLine253<-1
 multi_lm<-removingInflunentialPoints(xtable_food,y_vec,y_name,thisValue,dropSome)
@@ -983,7 +1011,7 @@ vif(multi_lm)
 multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
 
-###Dropping "potential" points
+###Dropping influential points
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 findMeLine253<-1
 multi_lm<-removingInflunentialPoints(xtable_food,y_vec,y_name,thisValue,dropSome)
@@ -1031,7 +1059,7 @@ vif(multi_lm)
 multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
 
-###Dropping "potential" points
+###Dropping influential points
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 findMeLine253<-1
 multi_lm<-removingInflunentialPoints(xtable_food,y_vec,y_name,thisValue,dropSome)
@@ -1080,7 +1108,7 @@ vif(multi_lm)
 multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
 
-###Dropping "potential" points
+###Dropping influential points
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 findMeLine253<-1
 multi_lm<-removingInflunentialPoints(xtable_food,y_vec,y_name,thisValue,dropSome)
@@ -1129,7 +1157,7 @@ vif(multi_lm)
 multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
 
-###Dropping "potential" points
+###Dropping influential points
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 findMeLine253<-1
 multi_lm<-removingInflunentialPoints(xtable_food,y_vec,y_name,thisValue,dropSome)
@@ -1178,7 +1206,7 @@ vif(multi_lm)
 multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
 
-###Dropping "potential" points
+###Dropping influential points
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 findMeLine253<-1
 multi_lm<-removingInflunentialPoints(xtable_alc,y_vec,y_name,thisValue,dropSome)
@@ -1226,7 +1254,7 @@ vif(multi_lm)
 multiPlots(multi_lm,y_vec[thisRows],y_name)
 ```
 
-###Dropping "potential" points
+###Dropping influential points
 ```{r echo=FALSE,warning=FALSE,results='asis'}
 findMeLine253<-1
 multi_lm<-removingInflunentialPoints(xtable_alc,y_vec,y_name,thisValue,dropSome)
