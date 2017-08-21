@@ -2,8 +2,8 @@ import sqlite3 as sqlite
 import csv
 import datetime
 
-initial_directory = '../../../../tweets_collection_all_sources_unique.csv'
-database_directory = r'../data/all_tweets.db'
+initial_directory = '../../data/tweets_collection_all_sources_unique.csv'
+database_directory = r'../../data/all_tweets.db'
 print datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
 with open(initial_directory,'r') as dt: 

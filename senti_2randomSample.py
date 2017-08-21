@@ -13,7 +13,7 @@ sys.path.append('/Users/deahanyu/anaconda/lib/python2.7/site-packages')
 
 # ##-----Step 1 : creating a field of random numbers
 
-# # database_directory = r'../data/tweets_all.db'
+# # database_directory = r'../../data/tweets_all.db'
 
 # # with sqlite.connect(database_directory) as con: 
 # # 	cur = con.cursor()
@@ -39,7 +39,7 @@ sys.path.append('/Users/deahanyu/anaconda/lib/python2.7/site-packages')
 # 	finaltext = cleantext.replace('  ',' ').lower()
 # 	return finaltext
 
-# database_directory = r'../data/tweets_all.db'
+# database_directory = r'../../data/tweets_all.db'
 
 # with sqlite.connect(database_directory) as con:
 
@@ -94,7 +94,7 @@ print len(z1.index)
 print len(z1.geoid.unique())
 
 
-#z1.to_csv('../data/sentiment_random_sample_tweets.csv',encoding='utf-8', index=False)
+#z1.to_csv('../../data/sentiment_random_sample_1_tweets.csv',encoding='utf-8', index=False)
 
 
 
